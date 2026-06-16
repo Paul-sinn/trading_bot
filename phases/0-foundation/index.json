@@ -16,7 +16,7 @@
       "status": "completed",
       "started_at": "2026-06-16T15:47:24+0900",
       "summary": "Claude Code hooks 설정: PreToolUse 리스크 게이트(pre_tool_use_risk.py, 주문 패턴만 검사 → agents/risk.check_risk_gate 호출, fail-closed, exit 2 차단), PostToolUse 테스트 자동실행(post_tool_use_test.py, 차단 없음), agents/risk.py 임시 인터페이스(RISK_KILL_SWITCH), settings.json 병합 등록, test_claude_hooks.py 6개 통과",
-      "completed_at": "2026-06-16T15:50:00+0900"
+      "completed_at": "2026-06-16T15:50:01+0900"
     },
     {
       "step": 2,
