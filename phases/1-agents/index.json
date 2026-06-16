@@ -1,0 +1,44 @@
+{
+  "project": "Custom Trading Bot",
+  "phase": "1-agents",
+  "steps": [
+    {
+      "step": 0,
+      "name": "agent-base",
+      "status": "completed",
+      "started_at": "2026-06-16T17:38:34+0900",
+      "summary": "Agent(ABC)·AgentStatus·AgentRegistry 공통 베이스 구현 — 순수 라이프사이클(IDLE/RUNNING/STOPPED/ERROR) + 멱등 kill-switch 버스(kill_all/is_killed/reset), kill 상태에서 start 거부. 외부 I/O 없음(ADR-002). 신규 테스트 21개 통과, 전체 109개 통과."
+    },
+    {
+      "step": 1,
+      "name": "risk-agent",
+      "status": "pending"
+    },
+    {
+      "step": 2,
+      "name": "scanner-agent",
+      "status": "pending"
+    },
+    {
+      "step": 3,
+      "name": "decision-agent",
+      "status": "pending"
+    },
+    {
+      "step": 4,
+      "name": "executor-agent",
+      "status": "pending"
+    },
+    {
+      "step": 5,
+      "name": "reporter-agent",
+      "status": "pending"
+    },
+    {
+      "step": 6,
+      "name": "notifier-agent",
+      "status": "pending"
+    }
+  ],
+  "created_at": "2026-06-16T17:38:34+0900"
+}
