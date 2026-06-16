@@ -8,10 +8,13 @@
       "status": "completed",
       "started_at": "2026-06-17T04:07:24+0900",
       "summary": "Next.js 14.2.35(App Router/TS/Tailwind) 스캐폴드 — UI_GUIDE 토큰·프리미티브(Card/Button/Gauge/Toggle/Slider), 사이드 내비+6개 라우트 placeholder, 백엔드 동기 타입·REST/WS 클라이언트·mock, Vitest 스모크 테스트. build/lint/test 통과."
+    },
     {
       "step": 1,
       "name": "dashboard-page",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-06-17T04:20:47+0900",
+      "summary": "① 대시보드 홈 구현 — 포트폴리오 요약(총자산/오늘 손익 시맨틱색/승률 tabular-nums), 리스크% Gauge(노출비율 파생), 봇 ON/OFF Toggle(로컬 상태), LiveTicker(/ws/ticker 구독 + mockTicker graceful fallback). Server Component 기본 + 티커·토글만 Client. SDD(specs/dashboard_page.md)→TDD(dashboard.test.tsx) 4 테스트. build/lint/test 통과."
     },
     {
       "step": 2,

@@ -6,6 +6,7 @@ import type {
   MarketDirection,
   Portfolio,
   RiskProfile,
+  TickerMessage,
   Trade,
 } from "@/types";
 
@@ -18,6 +19,17 @@ export const mockPortfolio: Portfolio = {
     { symbol: "AAPL", quantity: 10, avg_buy_price: 190, current_price: 195 },
     { symbol: "TSLA", quantity: 5, avg_buy_price: 250, current_price: 240 },
   ],
+};
+
+// backend ws/ticker.py 기본 워치리스트(AAPL/TSLA/NVDA)와 기준가에 맞춘 mock 스냅샷.
+// WS 미연결 시 티커가 비지 않도록 초기/폴백 값으로 사용한다.
+export const mockTicker: TickerMessage = {
+  type: "ticker",
+  data: {
+    AAPL: { price: 195, ts: "2026-06-16T13:30:00Z" },
+    TSLA: { price: 240, ts: "2026-06-16T13:30:00Z" },
+    NVDA: { price: 120, ts: "2026-06-16T13:30:00Z" },
+  },
 };
 
 export const mockTrades: Trade[] = [
