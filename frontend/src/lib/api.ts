@@ -1,6 +1,6 @@
 // backend REST fetch 래퍼. 외부 거래소/AI는 절대 직접 호출하지 않고
 // backend(SSOT)만 호출한다 (CLAUDE.md CRITICAL / ADR-001).
-import type { Portfolio, Trade, WeeklyReport } from "@/types";
+import type { MarketDirection, Portfolio, Trade, WeeklyReport } from "@/types";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -39,4 +39,12 @@ export function getTrades(): Promise<Trade[] | null> {
 /** 주간 OHLC + 누적 손익 + 요일별 승률. 실패 시 null (호출부에서 mock 폴백 가능). */
 export function getWeekly(): Promise<WeeklyReport | null> {
   return apiFetch<WeeklyReport>("/api/trades/weekly");
+}
+
+/**
+ * 매일 9시 Claude 시황 요약 + 7일 방향성. backend가 Claude를 호출하고 frontend는 결과만 받는다
+ * (CLAUDE.md CRITICAL: 프론트는 Claude 직접 호출 금지). 실패 시 null (호출부에서 mock 폴백 가능).
+ */
+export function getDirection(): Promise<MarketDirection | null> {
+  return apiFetch<MarketDirection>("/api/direction");
 }
