@@ -61,7 +61,10 @@
     {
       "step": 7,
       "name": "algo-sizing",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-06-16T17:19:17+0900",
+      "summary": "알고리즘 Layer 3 사이징 순수함수 구현: algorithms/sizing.py(PositionPlan dataclass, kelly_fraction(f=win_rate-(1-win_rate)/ratio, 음수→0·cap 0.25 상한·ratio≤0→0), stop_loss_price(entry-atr*mult, 하한 0), risk_appetite_weight(0보수~1공격→0.5+0.5*a clamp), position_size(per_share_risk·allowed_risk=equity*max_risk_pct 기반 floor 수량, CRITICAL ADR-003 한도 상한으로 risk_amount≤allowed_risk 보장, 분모0/equity부족/kelly0 엣지케이스 수량0)). talib 미사용 순수함수. SPEC(specs/sizing.md)+TDD(test_sizing.py 22개) 통과, 전체 88개 통과",
+      "completed_at": "2026-06-16T17:22:30+0900"
     }
   ],
   "created_at": "2026-06-16T15:45:12+0900"
