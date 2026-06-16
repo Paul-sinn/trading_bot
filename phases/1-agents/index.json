@@ -21,7 +21,10 @@
     {
       "step": 2,
       "name": "scanner-agent",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-06-16T17:47:07+0900",
+      "summary": "ScannerAgent(Agent) 구현 — 워치리스트 순환 scan()이 주입 PriceDataProvider(MockPriceDataProvider)로 OHLCV를 받아 algorithms Layer1(generate_signals)+Layer2(apply_filters)를 호출만 해 BULLISH & 필터통과 심볼만 Candidate로 수집. 지표 재구현/talib 없음(단일 진실, ADR-002). 한 심볼 예외는 격리(continue)해 1분 루프 보호, registry.killed면 scan 스킵(빈 리스트), tick()은 결과를 latest_candidates에 저장. VIX/센티먼트도 provider 주입. 신규 테스트 8개, 전체 137개 통과.",
+      "completed_at": "2026-06-16T17:52:00+0900"
     },
     {
       "step": 3,
