@@ -32,7 +32,7 @@
       "status": "completed",
       "started_at": "2026-06-16T22:19:24+0900",
       "summary": "DecisionAgent(Agent) 구현 — 스캐너 Candidate를 DecisionInput으로 감싸 주입된 DecisionProvider(MockDecisionProvider: BULLISH & filters_passed→BUY 아니면 HOLD, 결정론적)에 위임해 매수/홀드/매도 결정. Claude 의존은 provider 주입으로 격리(ADR-005), ClaudeDecisionProvider는 골격만(키 없으면 ValueError/있어도 NotImplementedError, 실호출 금지). 시그널/필터 재판정 없이 Candidate 결과 활용(ADR-002). provider 예외 후보는 보수적 HOLD(confidence 0)로 격리, 다른 후보는 정상, confidence 0~1 클램프, registry.killed면 판단 스킵(빈 리스트). 신규 테스트 13개, 전체 150개 통과.",
-      "completed_at": "2026-06-16T22:24:00+0900"
+      "completed_at": "2026-06-16T22:21:53+0900"
     },
     {
       "step": 4,
