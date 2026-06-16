@@ -38,7 +38,7 @@
       "step": 4,
       "name": "mcp-portfolio",
       "status": "completed",
-      "started_at": "2026-06-16T17:10:08+0900",
+      "started_at": "2026-06-16T17:11:43+0900",
       "summary": "Robinhood MCP 포트폴리오 fetch 경로 추상화: services/portfolio.py(Pydantic Position/Portfolio 모델, PortfolioProvider Protocol, MockPortfolioProvider 결정론적 고정데이터, RobinhoodPortfolioProvider 골격→NotImplementedError, get_portfolio_provider() 키 유무 분기 안전 fallback), api/portfolio.py(GET /api/portfolio, Depends 주입), main.py 라우터 등록. SPEC(specs/mcp_portfolio.md)+TDD(test_mcp_portfolio.py 10개) 통과, 전체 27개 통과",
       "completed_at": "2026-06-16T17:14:30+0900"
     },
