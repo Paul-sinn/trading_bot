@@ -37,9 +37,9 @@
       "step": 4,
       "name": "direction-ai-page",
       "status": "error",
-      "started_at": "2026-06-17T05:59:14+0900",
+      "started_at": "2026-06-17T06:19:25+0900",
       "error_message": "[3회 시도 후 실패] Step did not update status",
-      "failed_at": "2026-06-17T05:59:23+0900"
+      "failed_at": "2026-06-17T06:19:31+0900"
     },
     {
       "step": 5,
