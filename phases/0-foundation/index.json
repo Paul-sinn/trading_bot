@@ -48,7 +48,7 @@
       "status": "completed",
       "started_at": "2026-06-16T17:12:51+0900",
       "summary": "알고리즘 Layer 1 시그널 순수함수 구현: algorithms/signals.py(Signal enum BULLISH/NEUTRAL/BEARISH, SignalResult dataclass, ema_cross(9/21) 마지막봉 골든/데드크로스, rsi_signal(14) 과매수/과매도 + 분모0→RSI50, macd_signal(12/26/9) 히스토그램 부호전환, generate_signals 다수결 종합). pandas/numpy 직접계산(talib 미사용), 데이터부족/NaN/동일가격/빈시리즈 엣지케이스 NEUTRAL 처리. SPEC(specs/signals.md)+TDD(test_signals.py 17개) 통과, 전체 44개 통과",
-      "completed_at": "2026-06-16T17:20:00+0900"
+      "completed_at": "2026-06-16T17:16:17+0900"
     },
     {
       "step": 6,
