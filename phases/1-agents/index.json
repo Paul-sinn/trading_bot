@@ -45,7 +45,10 @@
     {
       "step": 5,
       "name": "reporter-agent",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-06-16T22:24:13+0900",
+      "summary": "ReporterAgent(Agent) 구현 — 체결(Fill)을 순수 함수 aggregate_daily/weekly로 집계(trade_count=len, total_pnl=sum(realized_pnl), win=realized_pnl>0, trade_count==0→win_rate 0.0 ZeroDivision 안전)하고 주입된 CommentProvider(MockCommentProvider: stats 반영 결정론 템플릿)로 코멘트를 붙여 SQLite(SQLAlchemy)에 DailyReport 영속화 후 반환. 집계는 순수·DB I/O는 에이전트/세션 레이어 분리(ADR-002/004), 세션 팩토리 주입으로 인메모리 SQLite 격리(파일 DB 오염 없음). executor.Fill에 후행 realized_pnl(기본 0.0, 비파괴) 추가해 청산 손익 단일 진실값화. models.py(Base/TradeRecord/DailyReport/WeeklyReport)+session.py(make_engine/make_session_factory, :memory→StaticPool, expire_on_commit=False), ClaudeCommentProvider 골격만(키 없으면 ValueError). 신규 테스트 11개, 전체 174개 통과.",
+      "completed_at": "2026-06-16T22:30:00+0900"
     },
     {
       "step": 6,

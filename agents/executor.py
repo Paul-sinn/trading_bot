@@ -41,7 +41,11 @@ class OrderRequest:
 
 @dataclass(frozen=True)
 class Fill:
-    """체결 내역. slippage = filled_price - requested_price (부호 보존)."""
+    """체결 내역. slippage = filled_price - requested_price (부호 보존).
+
+    realized_pnl은 청산(매도) 체결에서 채워지는 실현 손익이다(진입 체결은 0.0). 리포트
+    에이전트가 일간/주간 성과 집계 시 부호로 승/패를 판정하는 단일 진실값이다(후행·비파괴 필드).
+    """
 
     symbol: str
     side: Literal["buy", "sell"]
@@ -49,6 +53,7 @@ class Fill:
     requested_price: float
     filled_price: float
     slippage: float
+    realized_pnl: float = 0.0
 
 
 # --- 슬리피지 헬퍼 (순수) ---
