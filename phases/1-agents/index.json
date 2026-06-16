@@ -13,7 +13,10 @@
     {
       "step": 1,
       "name": "risk-agent",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-06-16T17:40:45+0900",
+      "summary": "RiskAgent(Agent) 구현 — 순수 계산 함수(unrealized_loss/current_risk_pct/drawdown_pct/max_position_pct_used, total_equity<=0→inf 안전) + evaluate 한도 판정(경계값 허용) + tick()이 한도 초과/provider 예외 시 registry.kill_all(fail-closed)로 전 에이전트 STOPPED(ADR-003). check_risk_gate 기존 RISK_KILL_SWITCH 동작 보존 + registry kill 반영, 타입 import는 TYPE_CHECKING 가드로 hook 경량 유지. 신규 테스트 20개, 전체 129개 통과.",
+      "completed_at": "2026-06-16T17:45:00+0900"
     },
     {
       "step": 2,
