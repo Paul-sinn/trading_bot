@@ -29,7 +29,10 @@
     {
       "step": 3,
       "name": "backend-server",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-06-16T15:52:26+0900",
+      "summary": "FastAPI 백엔드 골격: main.py(앱+로컬 frontend CORS), api/health.py(GET /health→{status:ok}), ws/ticker.py(WebSocket /ws/ticker, 결정론적 mock 가격 생성기 mock_price/ticker_snapshot/parse_symbols, WebSocketDisconnect 처리, TICKER_INTERVAL_SECONDS 기본 1초). 메시지 스키마 {type:'ticker', data:{<symbol>:{price:float, ts:iso8601}}}. SPEC+TDD(test_backend_server.py 4개) 통과, 전체 17개 통과",
+      "completed_at": "2026-06-16T15:55:00+0900"
     },
     {
       "step": 4,
