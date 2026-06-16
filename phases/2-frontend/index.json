@@ -31,7 +31,7 @@
       "status": "completed",
       "started_at": "2026-06-17T04:30:44+0900",
       "summary": "③ 주간 거래기록 구현 — 7일 캔들차트(심지 low~high + 몸통 open~close, 상승 #22c55e/하락 #ef4444) + 누적 손익 라인(중립색, 우측 Y축) Recharts ComposedChart 오버레이, 요일별 승률 히트맵 7칸(월~일, 승률에 따른 녹색 농도 + tabular-nums %). 차트는 Client Component(WeeklyChart)로 격리, 페이지는 Server Component. getWeekly()(REST) 시도 → mockWeekly 폴백. SDD(specs/weekly_trades_page.md)→TDD(weekly.test.tsx, recharts ResponsiveContainer mock) 3 테스트. build/lint/test 통과.",
-      "completed_at": "2026-06-17T12:34:30+0900"
+      "completed_at": "2026-06-17T04:38:05+0900"
     },
     {
       "step": 4,
