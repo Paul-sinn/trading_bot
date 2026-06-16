@@ -4,6 +4,17 @@ out/
 next-env.d.ts
 tsconfig.tsbuildinfo
 
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Secrets & local DB
+.env
+*.db
+
 # phase execution outputs
 phases/**/phase*-output.json
 phases/**/step*-output.json

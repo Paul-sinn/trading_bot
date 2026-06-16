@@ -1,0 +1,20 @@
+# Web / API
+fastapi
+uvicorn[standard]
+websockets
+pydantic
+pydantic-settings
+
+# Data / storage
+sqlalchemy
+redis
+httpx
+
+# Algorithms (지표는 pandas/numpy로 직접 계산)
+pandas
+numpy
+# ta-lib  (requires: brew install ta-lib)
+
+# Tests
+pytest
+pytest-asyncio
