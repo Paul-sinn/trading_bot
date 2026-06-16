@@ -42,6 +42,30 @@ export interface Trade {
   closed_at: string | null;
 }
 
+/** backend: services/report.py 주간 OHLC + 누적 손익 (일 단위) */
+export interface WeeklyBar {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  cumulative_pnl: number;
+}
+
+/** backend: services/report.py 요일별 승률 (월~일) */
+export interface DayWinRate {
+  /** "월" ~ "일" */
+  day: string;
+  /** 0 ~ 1 */
+  win_rate: number;
+}
+
+/** backend: services/report.py 주간 리포트 (③ 주간 거래기록) */
+export interface WeeklyReport {
+  bars: WeeklyBar[];
+  win_rates: DayWinRate[];
+}
+
 export type DirectionLabel = "bullish" | "neutral" | "bearish";
 
 export interface MarketDirection {

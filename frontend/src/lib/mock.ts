@@ -8,6 +8,7 @@ import type {
   RiskProfile,
   TickerMessage,
   Trade,
+  WeeklyReport,
 } from "@/types";
 
 export const mockPortfolio: Portfolio = {
@@ -56,6 +57,28 @@ export const mockTrades: Trade[] = [
     closed_at: "2026-06-16T15:10:00Z",
   },
 ];
+
+// 7거래일 OHLC + 누적 손익(우측 축). 한 down 데이를 포함한 완만한 상승 추세.
+export const mockWeekly: WeeklyReport = {
+  bars: [
+    { date: "06-08", open: 100, high: 103, low: 99, close: 102, cumulative_pnl: 20 },
+    { date: "06-09", open: 102, high: 104, low: 101, close: 103, cumulative_pnl: 35 },
+    { date: "06-10", open: 103, high: 103, low: 98, close: 99, cumulative_pnl: -10 },
+    { date: "06-11", open: 99, high: 102, low: 98, close: 101, cumulative_pnl: 25 },
+    { date: "06-12", open: 101, high: 106, low: 100, close: 105, cumulative_pnl: 60 },
+    { date: "06-13", open: 105, high: 107, low: 104, close: 106, cumulative_pnl: 80 },
+    { date: "06-14", open: 106, high: 108, low: 103, close: 104, cumulative_pnl: 55 },
+  ],
+  win_rates: [
+    { day: "월", win_rate: 0.6 },
+    { day: "화", win_rate: 0.5 },
+    { day: "수", win_rate: 0.3 },
+    { day: "목", win_rate: 0.7 },
+    { day: "금", win_rate: 0.8 },
+    { day: "토", win_rate: 0.66 },
+    { day: "일", win_rate: 0.4 },
+  ],
+};
 
 export const mockDirection: MarketDirection = {
   date: "2026-06-16",
