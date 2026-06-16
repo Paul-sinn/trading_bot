@@ -20,7 +20,10 @@
     {
       "step": 2,
       "name": "daily-trades-page",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-06-17T04:26:40+0900",
+      "summary": "② 일간 거래기록 구현 — 오늘 체결 테이블(티커·진입가·청산가·실현손익·AI 메모 5컬럼), 헤더 text-neutral-500 uppercase, 숫자 tabular-nums text-right, 실현손익 컬럼만 시맨틱 색상(pnlColorClass), 미청산 청산가 — 처리, 빈 상태('오늘 체결 없음'). getTrades()(REST) 시도 → mockTrades 폴백. Server Component. SDD(specs/daily_trades_page.md)→TDD(daily.test.tsx) 4 테스트. build/lint/test 통과.",
+      "completed_at": "2026-06-17T04:28:30+0900"
     },
     {
       "step": 3,

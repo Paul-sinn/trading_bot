@@ -1,6 +1,6 @@
 // backend REST fetch 래퍼. 외부 거래소/AI는 절대 직접 호출하지 않고
 // backend(SSOT)만 호출한다 (CLAUDE.md CRITICAL / ADR-001).
-import type { Portfolio } from "@/types";
+import type { Portfolio, Trade } from "@/types";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -29,4 +29,9 @@ export async function apiFetch<T>(
 /** 현재 포트폴리오 스냅샷. 실패 시 null (호출부에서 mock 폴백 가능). */
 export function getPortfolio(): Promise<Portfolio | null> {
   return apiFetch<Portfolio>("/api/portfolio");
+}
+
+/** 오늘 체결 거래기록. 실패 시 null (호출부에서 mock 폴백 가능). */
+export function getTrades(): Promise<Trade[] | null> {
+  return apiFetch<Trade[]>("/api/trades/daily");
 }
