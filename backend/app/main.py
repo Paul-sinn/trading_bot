@@ -7,7 +7,7 @@ REST 라우터 등록 + WebSocket 엔드포인트 + 로컬 frontend 허용 CORS.
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.api import health
+from backend.app.api import health, portfolio
 from backend.app.ws.ticker import parse_symbols, ticker_stream
 
 app = FastAPI(title="Custom Trading Bot API")
@@ -25,6 +25,7 @@ app.add_middleware(
 # `include_router`는 introspection이 어려운 wrapper를 추가하므로, 미리 만들어진
 # 라우트를 직접 등록해 평평한 라우트 목록을 유지한다.
 app.router.routes.extend(health.router.routes)
+app.router.routes.extend(portfolio.router.routes)
 
 
 @app.websocket("/ws/ticker")
