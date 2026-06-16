@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# pre-commit: frontend ESLint + Prettier 자동 수정 + Python 구문 체크.
+#
+# graceful no-op: frontend/package.json 또는 node_modules가 없으면 lint/format을
+# 건너뛰고 exit 0. (이 phase에는 아직 Next.js가 스캐폴드되지 않았다.)
+# frontend가 존재할 때만 lint를 실행하고 실패 시 exit 1로 커밋을 차단한다.
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$REPO_ROOT"
+
+# --- Frontend: ESLint + Prettier (graceful no-op) ---
+if [ -f frontend/package.json ] && [ -d frontend/node_modules ]; then
+  echo "[pre-commit] frontend ESLint..."
+  npm run lint --prefix frontend || {
+    echo "[pre-commit] ESLint 실패 — 커밋 차단" >&2
+    exit 1
+  }
+  # Prettier 자동 수정 (format 스크립트가 있을 때만).
+  if npm run --prefix frontend 2>/dev/null | grep -q '^  format'; then
+    echo "[pre-commit] frontend Prettier..."
+    npm run format --prefix frontend || {
+      echo "[pre-commit] Prettier 실패 — 커밋 차단" >&2
+      exit 1
+    }
+  fi
+else
+  echo "[pre-commit] frontend(package.json/node_modules) 미존재 → lint/format 건너뜀"
+fi
+
+# --- Python: 스테이징된 .py 구문 체크 (무거운 포매터는 강제하지 않음) ---
+PY_FILES="$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep '\.py$' || true)"
+if [ -n "$PY_FILES" ]; then
+  echo "[pre-commit] Python 구문 체크 (py_compile)..."
+  echo "$PY_FILES" | xargs python3 -m py_compile || {
+    echo "[pre-commit] py_compile 실패 — 커밋 차단" >&2
+    exit 1
+  }
+fi
+
+exit 0

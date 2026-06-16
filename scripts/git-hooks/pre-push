@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# pre-push: 단위테스트 전체 통과 확인. 실패 시 push 차단(exit 1).
+# pytest 미설치 환경이면 조용히 통과시키지 않고 명확한 에러 후 exit 1.
+set -uo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$REPO_ROOT"
+
+# pytest 탐색: 프로젝트 venv > PATH > python -m pytest.
+if [ -x ".venv/bin/pytest" ]; then
+  PYTEST=(.venv/bin/pytest)
+elif command -v pytest >/dev/null 2>&1; then
+  PYTEST=(pytest)
+elif python3 -c "import pytest" >/dev/null 2>&1; then
+  PYTEST=(python3 -m pytest)
+else
+  echo "[pre-push] pytest가 설치되어 있지 않습니다. 'pip install pytest' 후 다시 시도하세요." >&2
+  exit 1
+fi
+
+echo "[pre-push] pytest 실행..."
+"${PYTEST[@]}" -q || {
+  echo "[pre-push] 단위테스트 실패 — push 차단" >&2
+  exit 1
+}
+
+exit 0

@@ -21,7 +21,10 @@
     {
       "step": 2,
       "name": "git-hooks",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-06-16T15:50:01+0900",
+      "summary": "git hooks 설정: 버전관리되는 scripts/git-hooks/pre-commit(frontend ESLint+Prettier, frontend 부재 시 graceful no-op + staged .py py_compile 구문체크)·pre-push(pytest 전체 통과 확인, 미설치 시 명확한 에러 후 exit 1), scripts/install-hooks.sh(.git/hooks로 복사+chmod, 멱등), test_git_hooks.py 4개 통과",
+      "completed_at": "2026-06-16T15:52:30+0900"
     },
     {
       "step": 3,
