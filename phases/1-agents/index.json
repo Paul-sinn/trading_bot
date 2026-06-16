@@ -37,7 +37,10 @@
     {
       "step": 4,
       "name": "executor-agent",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-06-16T22:21:53+0900",
+      "summary": "ExecutorAgent(Agent) 구현 — 판단 결과(BUY/SELL)를 OrderRequest로 받아 CRITICAL 게이트 순서(① quantity<=0 거부 ② registry.killed 거부 ③ 게이트 예외→fail-closed 거부 ④ 게이트 차단 거부 ⑤ 통과 시에만 provider.place_order ⑥ Fill 기록)를 강제. 게이트 통과 없이는 어떤 경로로도 place_order에 닿지 않음(ADR-003/CLAUDE.md CRITICAL). 주입된 OrderProvider(MockOrderProvider: 결정론 체결+고정 슬리피지)로 외부 의존 격리, RobinhoodOrderProvider는 골격만(키 없으면 ValueError/있어도 NotImplementedError, 실주문 금지). slippage=filled-requested 부호 보존, compute_slippage/build_fill 헬퍼 분리, 체결은 fills 리스트에 기록(리포트/알림 후속 소비). 신규 테스트 13개, 전체 163개 통과.",
+      "completed_at": "2026-06-16T22:30:00+0900"
     },
     {
       "step": 5,
