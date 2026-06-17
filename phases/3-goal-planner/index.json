@@ -22,9 +22,9 @@
       "step": 2,
       "name": "goal-plan-api",
       "status": "error",
-      "started_at": "2026-06-17T10:55:36+0900",
+      "started_at": "2026-06-17T11:15:44+0900",
       "error_message": "[3회 시도 후 실패] Step did not update status",
-      "failed_at": "2026-06-17T10:55:42+0900"
+      "failed_at": "2026-06-17T11:15:51+0900"
     },
     {
       "step": 3,
