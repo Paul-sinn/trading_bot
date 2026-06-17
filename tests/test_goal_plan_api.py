@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from algorithms.goal_planner import SYSTEM_MAX_RISK_PCT
-from backend.app.api.goal_plan import get_session_factory
+from backend.app.api.goal_plan import set_session_factory
 from backend.app.db.models import GoalPlanRecord
 from backend.app.db.session import make_session_factory
 from backend.app.main import app
@@ -24,11 +24,11 @@ from backend.app.main import app
 
 @pytest.fixture()
 def session_factory():
-    """테스트 격리용 인메모리 SQLite 세션 팩토리 + DI 오버라이드."""
+    """테스트 격리용 인메모리 SQLite 세션 팩토리 주입(파일 DB 오염 방지)."""
     factory = make_session_factory("sqlite:///:memory:")
-    app.dependency_overrides[get_session_factory] = lambda: factory
+    set_session_factory(factory)
     yield factory
-    app.dependency_overrides.pop(get_session_factory, None)
+    set_session_factory(None)
 
 
 @pytest.fixture()
