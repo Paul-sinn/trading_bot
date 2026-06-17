@@ -70,14 +70,16 @@ def test_position_requires_current_price():
         Position(symbol="AAPL", quantity=1.0, avg_buy_price=190.0)
 
 
-def test_get_portfolio_provider_no_key_uses_mock():
-    settings = Settings(robinhood_api_key=None)
+def test_get_portfolio_provider_mcp_disabled_uses_mock():
+    # 기본(MCP 비활성) → Mock(안전 기본값, 실조회 없음).
+    settings = Settings(robinhood_mcp_enabled=False)
     provider = get_portfolio_provider(settings)
     assert isinstance(provider, MockPortfolioProvider)
 
 
-def test_get_portfolio_provider_with_key_uses_robinhood():
-    settings = Settings(robinhood_api_key="dummy-key")
+def test_get_portfolio_provider_mcp_enabled_uses_robinhood():
+    # MCP 활성 → Robinhood MCP provider(골격).
+    settings = Settings(robinhood_mcp_enabled=True)
     provider = get_portfolio_provider(settings)
     assert isinstance(provider, RobinhoodPortfolioProvider)
 

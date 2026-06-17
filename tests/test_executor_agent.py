@@ -179,13 +179,9 @@ def test_tick_is_noop():
 # --- RobinhoodOrderProvider 골격 ---
 
 
-def test_robinhood_provider_without_key_raises():
-    provider = RobinhoodOrderProvider(api_key=None)
-    with pytest.raises(ValueError):
-        asyncio.run(provider.place_order(_buy()))
-
-
-def test_robinhood_provider_with_key_not_implemented():
-    provider = RobinhoodOrderProvider(api_key="rh-test")
+def test_robinhood_provider_skeleton_not_implemented():
+    # Robinhood는 공개 API 키가 없다 — robinhood-trading MCP 기반. 골격은 실주문하지
+    # 않고 NotImplementedError로 차단한다(통합 phase에서 MCP 연동).
+    provider = RobinhoodOrderProvider()
     with pytest.raises(NotImplementedError):
         asyncio.run(provider.place_order(_buy()))

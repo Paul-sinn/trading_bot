@@ -19,7 +19,8 @@ def test_secrets_default_to_none():
     from backend.app.core.config import Settings
 
     settings = Settings()
-    assert settings.robinhood_api_key is None
+    # Robinhood는 공개 API 키가 없다 — MCP 토글이 안전 기본값 False(실거래 없음).
+    assert settings.robinhood_mcp_enabled is False
     assert settings.claude_api_key is None
 
 

@@ -40,16 +40,17 @@ class PortfolioProvider(Protocol):
 - 최소 1개 포지션을 포함하며, `total_equity == cash + Σ(quantity × current_price)`를 만족.
 
 ### RobinhoodPortfolioProvider
-- 실제 MCP 호출 **골격만**. 이 step에서 인증/주문 로직을 채우지 않는다.
-- `get_portfolio()` 호출 시 키가 없으면 명확한 예외(`NotImplementedError`)를 던진다.
-- 키/인증/실연동은 후속 phase의 blocked 항목.
+- Robinhood는 공개 API 키가 없다 — robinhood-trading **MCP 서버**로 조회한다(`get_portfolio`/`get_equity_positions` 등).
+- 실제 MCP 브리지는 **골격만**. 선택적 `mcp_client`를 주입받되 이 단계에서 채우지 않는다.
+- `get_portfolio()` 호출 시 명확한 예외(`NotImplementedError`)를 던져 실조회로 새지 않게 한다.
+- MCP 실연동은 통합 phase 범위.
 
 ## provider 선택 (config 분기)
 
-- `get_portfolio_provider()`는 `config.Settings.robinhood_api_key` 유무로 분기한다.
-  - 키 없음 → `MockPortfolioProvider` (안전 기본값).
-  - 키 있음 → `RobinhoodPortfolioProvider` (이 step에서는 호출 시 NotImplementedError).
-- 이유: 키 부재 시 실거래 시도 없이 안전하게 Mock으로 fallback.
+- `get_portfolio_provider()`는 `config.Settings.robinhood_mcp_enabled`로 분기한다.
+  - False(기본) → `MockPortfolioProvider` (안전 기본값, 실조회 없음).
+  - True → `RobinhoodPortfolioProvider` (이 단계에서는 호출 시 NotImplementedError).
+- 이유: 기본값을 Mock으로 두어 실거래/실조회 시도 없이 안전하게 동작.
 
 ## REST 엔드포인트
 
@@ -62,7 +63,7 @@ class PortfolioProvider(Protocol):
 - **빈 포지션**: `positions == []`. `total_equity == cash`, 크래시 없음.
 - **음수 day_pnl**: 손실 상황. 그대로 음수 허용.
 - **current_price 누락**: Position은 `current_price` 필수. 누락 시 검증 에러(Pydantic).
-- **MCP 호출 실패**: RobinhoodPortfolioProvider가 키 없이 호출되면 NotImplementedError.
+- **MCP 미연동**: RobinhoodPortfolioProvider 골격은 호출 시 NotImplementedError(실조회로 새지 않음).
 
 ## 비범위 (이 step에서 하지 않음)
 - 실제 Robinhood MCP 호출 / 인증 / 실주문 / 실조회.

@@ -109,29 +109,25 @@ class MockOrderProvider:
 
 
 class RobinhoodOrderProvider:
-    """실제 Robinhood MCP 주문 연동 골격.
+    """Robinhood MCP 기반 주문 실행 (실연동 골격).
 
-    이 step에서는 로직을 채우지 않는다(키/인증은 후속 phase). 키가 없으면 명확한 예외,
-    있어도 실호출하지 않고 NotImplementedError. CRITICAL: 잘못 채우면 실거래 — 골격까지만.
+    Robinhood는 공개 API 키가 없다. robinhood-trading MCP 서버(place_equity_order 등)로
+    주문한다. 이 단계에서는 MCP 브리지를 채우지 않고 명확한 예외를 던져 실주문으로 새지
+    않게 한다. CRITICAL: 잘못 채우면 실거래 — 골격까지만. 통합 phase에서 구현한다.
 
-    실제 연동 시 구조(주석):
-        # mcp 클라이언트로 주문 실행 → 체결 응답 파싱 → Fill 변환:
-        # resp = await self._mcp.place_order(symbol=req.symbol, side=req.side,
+    통합 phase 실연동 시 구조(주석):
+        # resp = await self._mcp.place_equity_order(symbol=req.symbol, side=req.side,
         #                                    quantity=req.quantity, limit_price=req.limit_price)
         # return build_fill(req, requested_price=resp.requested, filled_price=resp.filled)
     """
 
-    def __init__(self, api_key: str | None = None) -> None:
-        self._api_key = api_key
+    def __init__(self, mcp_client: object | None = None) -> None:
+        self._mcp = mcp_client
 
     async def place_order(self, req: OrderRequest) -> Fill:
-        if not self._api_key:
-            raise ValueError(
-                "Robinhood API 키가 없다. 주문 실행 불가 (후속 phase에서 연동)."
-            )
         raise NotImplementedError(
-            "Robinhood MCP 주문 연동은 후속 phase에서 구현한다. "
-            "현재는 키가 있어도 실주문하지 않는다."
+            "Robinhood MCP 주문 연동은 통합 phase에서 구현한다. "
+            "현재는 robinhood-trading MCP 주문을 시도하지 않는다."
         )
 
 

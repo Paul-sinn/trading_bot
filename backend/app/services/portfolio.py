@@ -66,25 +66,34 @@ class MockPortfolioProvider:
 
 
 class RobinhoodPortfolioProvider:
-    """실제 Robinhood MCP 연동 골격.
+    """Robinhood MCP 기반 포트폴리오 조회 (실연동 골격).
 
-    이 step에서는 인증/실조회 로직을 채우지 않는다 (키/인증은 후속 phase).
-    호출 시 명확한 예외를 던져 실거래/실조회로 새지 않게 한다.
+    Robinhood는 공개 API 키가 없다. robinhood-trading MCP 서버(get_portfolio /
+    get_equity_positions 등)로 조회한다. 이 단계에서는 MCP 브리지를 채우지 않고
+    명확한 예외를 던져 실조회로 새지 않게 한다(안전 최우선). 통합 phase에서 구현한다.
     """
 
+    def __init__(self, mcp_client: object | None = None) -> None:
+        self._mcp = mcp_client
+
     async def get_portfolio(self) -> Portfolio:
+        # 통합 phase 실연동 시(주석):
+        #   acct = await self._mcp.get_portfolio()
+        #   positions = await self._mcp.get_equity_positions()
+        #   return Portfolio(...)  # MCP 응답 → Portfolio 변환
         raise NotImplementedError(
-            "Robinhood MCP 연동은 후속 phase에서 구현한다. "
-            "현재는 키가 있어도 실조회를 시도하지 않는다."
+            "Robinhood MCP 연동은 통합 phase에서 구현한다. "
+            "현재는 robinhood-trading MCP 조회를 시도하지 않는다."
         )
 
 
 def get_portfolio_provider(settings: Settings | None = None) -> PortfolioProvider:
     """설정 기반 provider 선택.
 
-    키가 없으면 Mock(안전 기본값), 있으면 Robinhood(골격)을 돌려준다.
+    `robinhood_mcp_enabled`가 False(기본)면 Mock(안전 기본값, 실조회 없음),
+    True면 Robinhood MCP provider(골격)을 돌려준다.
     """
     settings = settings or Settings()
-    if settings.robinhood_api_key:
+    if settings.robinhood_mcp_enabled:
         return RobinhoodPortfolioProvider()
     return MockPortfolioProvider()
