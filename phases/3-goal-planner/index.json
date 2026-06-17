@@ -24,7 +24,7 @@
       "status": "completed",
       "started_at": "2026-06-17T14:16:57+0900",
       "summary": "목표 플랜 생성/적용 REST(backend/app/api/goal_plan.py). POST /api/goal-plan은 generate_goal_plan으로 GoalPlan 생성만(부수효과 없음, 검토 후 적용 원칙) — DB·활성 세팅 불변. POST /api/goal-plan/apply는 동일 입력으로 플랜 재생성(클라이언트 세팅 불신뢰 — 하드캡 우회 차단) 후 GoalPlanRecord로 영속화, applied=True 활성 1건 유지. current_equity 생략 시 포트폴리오 provider total_equity 사용. 무효 입력 422. 인메모리 SQLite 격리(set_session_factory). 11개 테스트 통과(전체 223).",
-      "completed_at": "2026-06-17T14:34:00+0900"
+      "completed_at": "2026-06-17T14:26:14+0900"
     },
     {
       "step": 3,
