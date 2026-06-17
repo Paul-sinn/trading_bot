@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/hooks/pre_tool_use_risk.py"
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/pre_tool_use_risk.py\""
           }
         ]
       }
@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/hooks/post_tool_use_test.py"
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/post_tool_use_test.py\""
           }
         ]
       }

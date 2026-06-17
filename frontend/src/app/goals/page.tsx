@@ -6,6 +6,7 @@
 "use client";
 
 import { useState } from "react";
+import { AiAnalysisPanel } from "@/components/goals/AiAnalysisPanel";
 import { Card } from "@/components/ui/Card";
 import { Gauge } from "@/components/ui/Gauge";
 import { mockGoals } from "@/lib/mock";
@@ -95,6 +96,12 @@ export default function GoalsPage() {
         <p className="text-xs text-neutral-500">
           저장 권위는 backend입니다. 입력값은 후속 단계에서 연동됩니다.
         </p>
+      </Card>
+
+      {/* AI 분석하기 — 목표기간·모드로 backend가 역산한 세팅/근거를 검토 후 적용 */}
+      <Card className="space-y-4">
+        <h2 className="text-sm font-medium text-neutral-400">AI 분석하기</h2>
+        <AiAnalysisPanel targetAmount={mockGoals.target_amount} />
       </Card>
     </div>
   );

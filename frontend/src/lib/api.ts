@@ -1,6 +1,14 @@
 // backend REST fetch 래퍼. 외부 거래소/AI는 절대 직접 호출하지 않고
 // backend(SSOT)만 호출한다 (CLAUDE.md CRITICAL / ADR-001).
-import type { MarketDirection, Portfolio, Trade, WeeklyReport } from "@/types";
+import type {
+  GoalPlan,
+  GoalPlanRecord,
+  GoalPlanRequest,
+  MarketDirection,
+  Portfolio,
+  Trade,
+  WeeklyReport,
+} from "@/types";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -47,4 +55,29 @@ export function getWeekly(): Promise<WeeklyReport | null> {
  */
 export function getDirection(): Promise<MarketDirection | null> {
   return apiFetch<MarketDirection>("/api/direction");
+}
+
+/**
+ * 목표 플랜 생성(부수효과 없음). backend가 알고리즘 역산 + Claude 근거를 수행하고 프론트는
+ * 결과만 받는다 (CLAUDE.md CRITICAL: 프론트는 Claude/거래소 직접 호출 금지). 실패 시 null
+ * (호출부에서 mock 폴백 가능).
+ */
+export function createGoalPlan(req: GoalPlanRequest): Promise<GoalPlan | null> {
+  return apiFetch<GoalPlan>("/api/goal-plan", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+/**
+ * 목표 플랜 적용(영속화). backend가 동일 입력으로 플랜을 재생성해 활성 세팅으로 저장한다
+ * (검토 후 적용 원칙 — 적용 전에는 활성 세팅 불변). 실패 시 null (호출부에서 로컬 폴백).
+ */
+export function applyGoalPlan(
+  req: GoalPlanRequest,
+): Promise<GoalPlanRecord | null> {
+  return apiFetch<GoalPlanRecord>("/api/goal-plan/apply", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
 }

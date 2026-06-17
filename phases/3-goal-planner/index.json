@@ -29,7 +29,10 @@
     {
       "step": 3,
       "name": "goals-page-ai-analysis",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-06-17T14:26:15+0900",
+      "summary": "기존 ⑤ 목표 페이지(진행 바·리스크 한도 입력) 유지한 채 'AI 분석하기' 패널 추가(components/goals/AiAnalysisPanel.tsx). 목표기간(개월)·모드(안전 한도 내(추천)↔목표 우선(공격적)) 선택 → backend POST /api/goal-plan 호출로 역산 세팅(appetite/리스크·드로우다운·포지션%·스탑 ATR)·AI 근거·실현가능성 배지(현실적/도전적/비현실적, 녹/주/적) 표시. '적용' 시 POST /api/goal-plan/apply(검토 후 적용 — 적용 전 활성 세팅 불변). 백엔드 미가동 시 lib/mock.ts mockGoalPlan으로 graceful fallback. 프론트는 backend REST만 호출(CLAUDE.md CRITICAL), 세팅 수치 표시 전용(재계산/하드캡 우회 없음). 타입·api 함수 추가(types/index.ts, lib/api.ts). 6개 라우트 빌드 통과, frontend 28개 테스트 통과(신규 5개).",
+      "completed_at": "2026-06-17T22:33:00+0900"
     }
   ],
   "created_at": "2026-06-17T10:08:47+0900"

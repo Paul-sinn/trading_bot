@@ -88,3 +88,65 @@ export interface RiskProfile {
   sector_whitelist: string[];
   sector_blacklist: string[];
 }
+
+// --- 목표 플랜 (backend: algorithms/goal_planner.py + services/goal_plan.py + api/goal_plan.py) ---
+
+/** backend PlanMode */
+export type PlanMode = "safe" | "aggressive";
+
+/** backend Feasibility */
+export type Feasibility = "realistic" | "ambitious" | "unrealistic";
+
+/** backend agents/risk.py RiskLimits (분수: 0.05 = 5%). */
+export interface RiskLimits {
+  max_risk_pct: number;
+  max_drawdown_pct: number;
+  max_position_pct: number;
+}
+
+/** backend algorithms/goal_planner.py GoalDerivedSettings */
+export interface GoalDerivedSettings {
+  /** 0.0(보수적) ~ 1.0(공격적) */
+  appetite: number;
+  risk_limits: RiskLimits;
+  stop_loss_atr_multiplier: number;
+  feasibility: Feasibility;
+  /** 분수 (0.02 = 2%) */
+  required_monthly_return: number;
+}
+
+/** backend services/goal_plan.py GoalPlan — POST /api/goal-plan 응답 */
+export interface GoalPlan {
+  settings: GoalDerivedSettings;
+  rationale: string;
+  summary: string;
+  feasibility: Feasibility;
+  required_monthly_return: number;
+}
+
+/** backend api/goal_plan.py GoalPlanRequest — POST 요청 body */
+export interface GoalPlanRequest {
+  target_amount: number;
+  months: number;
+  mode: PlanMode;
+  /** 생략 시 backend 포트폴리오 total_equity 사용 */
+  current_equity?: number | null;
+}
+
+/** backend api/goal_plan.py GoalPlanRecordOut — POST /api/goal-plan/apply 응답(평탄 DTO) */
+export interface GoalPlanRecord {
+  id: number;
+  target_amount: number;
+  months: number;
+  mode: PlanMode;
+  required_monthly_return: number;
+  feasibility: Feasibility;
+  appetite: number;
+  max_risk_pct: number;
+  max_drawdown_pct: number;
+  max_position_pct: number;
+  stop_loss_atr_multiplier: number;
+  rationale: string | null;
+  applied: boolean;
+  created_at: string;
+}

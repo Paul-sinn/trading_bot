@@ -2,6 +2,7 @@
 // backend MockPortfolioProvider / ws ticker mock 값과 일치시킨다.
 // 후속 step에서 실제 api.ts / ws.ts 호출로 교체 가능하게 둔다.
 import type {
+  GoalPlan,
   Goals,
   MarketDirection,
   Portfolio,
@@ -98,4 +99,26 @@ export const mockRiskProfile: RiskProfile = {
   risk_appetite: 50,
   sector_whitelist: ["Technology", "Healthcare"],
   sector_blacklist: ["Energy"],
+};
+
+// 백엔드 미가동 시 AI 분석 패널이 보여줄 graceful fallback 계획.
+// backend MockGoalPlanProvider + derive_settings(SAFE, 완만한 목표) 결과와 형태/단위(분수)를 맞춘다.
+// 수치는 백엔드 응답을 표시만 하는 예시값 — 프론트에서 재계산하지 않는다(ADR-003/005).
+export const mockGoalPlan: GoalPlan = {
+  settings: {
+    appetite: 0.11,
+    risk_limits: {
+      max_risk_pct: 0.008,
+      max_drawdown_pct: 0.06,
+      max_position_pct: 0.12,
+    },
+    stop_loss_atr_multiplier: 1.72,
+    feasibility: "realistic",
+    required_monthly_return: 0.0172,
+  },
+  rationale:
+    "월 1.7% 필요, 모드 safe, 실현가능성 realistic → appetite 0.11, risk 0.8%. (백엔드 미연결 — 예시 계획)",
+  summary: "필요 월 수익률 1.7%, 실현가능성 realistic, 최대 리스크 0.8%.",
+  feasibility: "realistic",
+  required_monthly_return: 0.0172,
 };
