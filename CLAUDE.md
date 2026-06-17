@@ -40,3 +40,9 @@ uvicorn backend.app.main:app --reload   # 백엔드 서버
 pytest             # 전체 테스트
 pytest tests/test_기능명.py             # 단일 기능 테스트
 ```
+
+## 실수 기록 (재발 방지)
+- **dev 서버 켜둔 채 `npm run build` 금지**: `npm run dev`가 떠 있는 상태에서 `npm run build`(프로덕션 빌드)를 돌리면 dev 서버의 `frontend/.next` 디렉토리를 프로덕션 산출물로 덮어쓴다. 그러면 dev 서버가 기대하는 CSS 경로(`/_next/static/css/app/layout.css`)가 404가 되어 **스타일이 전부 깨져 보인다**(코드 문제 아님).
+  - 원인: dev와 build가 같은 `.next`를 공유. build가 dev 빌드 산출물을 클로버.
+  - 복구: `pkill -f "next dev"` → `rm -rf frontend/.next` → `npm run dev` 재시작.
+  - 예방: 검증 빌드는 dev 서버를 끄고 하거나, dev 서버는 그대로 두고 빌드 검증은 CI/별도 클린 체크아웃에서 한다. dev 중 build가 필요하면 `.next` 충돌을 인지하고 끝나면 dev 재시작.
