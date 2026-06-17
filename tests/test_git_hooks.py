@@ -26,16 +26,19 @@ def test_hook_files_exist_and_executable():
         assert _is_executable(p), f"{p} 실행권한 없음"
 
 
-def test_pre_commit_graceful_no_op_without_frontend():
-    # frontend가 스캐폴드되지 않은 현재 상태 → lint/format 건너뛰고 exit 0.
-    assert not (PROJECT_ROOT / "frontend" / "package.json").exists()
+def test_pre_commit_graceful_no_op_without_frontend(tmp_path):
+    # frontend가 없는 환경에서 pre-commit은 lint/format을 건너뛰고 exit 0 한다.
+    # repo 실제 상태(이제 frontend가 스캐폴드됨)에 의존하지 않도록, frontend가 없는
+    # 격리된 임시 디렉토리에서 hook을 실행해 no-op 분기를 검증한다.
+    assert not (tmp_path / "frontend").exists()
     result = subprocess.run(
         ["bash", str(PRE_COMMIT)],
-        cwd=str(PROJECT_ROOT),
+        cwd=str(tmp_path),
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0, result.stderr
+    assert "건너뜀" in result.stdout
 
 
 def test_pre_push_invokes_pytest_statically():
