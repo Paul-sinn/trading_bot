@@ -16,7 +16,7 @@
       "status": "completed",
       "started_at": "2026-06-17T10:11:58+0900",
       "summary": "결정론 역산 세팅(derive_settings)에 AI 근거/요약을 결합하는 backend 서비스(generate_goal_plan). provider 주입(Mock/Claude 골격)으로 Claude 격리, 세팅 수치 단일 진실은 algorithms.goal_planner — AI가 risk%/appetite를 덮어쓰지 못함(ADR-003/005). provider 예외 시 fallback 근거로 격리, 비현실 목표 summary 경고. 10개 테스트 통과(전체 212).",
-      "completed_at": "2026-06-17T10:20:00+0900"
+      "completed_at": "2026-06-17T10:15:04+0900"
     },
     {
       "step": 2,
