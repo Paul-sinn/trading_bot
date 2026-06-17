@@ -7,7 +7,8 @@
       "name": "goal-planner-algo",
       "status": "completed",
       "started_at": "2026-06-17T10:08:47+0900",
-      "summary": "목표금액·기간으로부터 리스크·투자성향 세팅을 역산하는 순수 함수(required_monthly_return/feasibility/derive_settings). RiskLimits 재사용, max_risk_pct는 SYSTEM_MAX_RISK_PCT(0.05) 하드캡 보장(ADR-003). 14개 테스트 통과."
+      "summary": "목표금액·기간으로부터 리스크·투자성향 세팅을 역산하는 순수 함수(required_monthly_return/feasibility/derive_settings). RiskLimits 재사용, max_risk_pct는 SYSTEM_MAX_RISK_PCT(0.05) 하드캡 보장(ADR-003). 14개 테스트 통과.",
+      "completed_at": "2026-06-17T10:11:55+0900"
     },
     {
       "step": 1,
