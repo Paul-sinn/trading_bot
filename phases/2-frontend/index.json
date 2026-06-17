@@ -47,7 +47,7 @@
       "status": "completed",
       "started_at": "2026-06-17T09:04:35+0900",
       "summary": "⑤ 목표 & 리스크 구현 — 목표금액 진행 바(current/target 진행률, Gauge 프리미티브 재사용 + formatUsd 금액 병기) + 리스크 한도 설정 입력(드로우다운 한도/최대 포지션 크기, UI_GUIDE 입력 스타일 bg-[#1a1a1a]). 한도 값은 agents/risk.py RiskLimits(max_drawdown_pct/max_position_pct)와 매핑, 입력은 로컬 상태 반영(저장 권위는 backend — 후속 연동, 거래 로직 직접 적용 안 함). mockGoals 기본값. Client Component. SDD(specs/goals_risk_page.md)→TDD(goals.test.tsx) 3 테스트. build/lint/test 통과.",
-      "completed_at": "2026-06-17T09:07:00+0900"
+      "completed_at": "2026-06-17T09:09:19+0900"
     },
     {
       "step": 6,
