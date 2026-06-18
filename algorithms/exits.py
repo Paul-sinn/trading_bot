@@ -91,8 +91,8 @@ def evaluate_exit(
     breakeven_buffer: float = 0.2,
     partial_take_R: float = 2.0,
     partial_fraction: float = 1.0 / 3.0,
-    trail_atr_mult: float = 3.0,
-    time_stop_days: int = 10,
+    trail_atr_mult: float = 4.0,  # v2(헌장 §8): 트레일 더 넓게(승자 태우기, 3.0→4.0)
+    time_stop_days: int = 15,  # v2: 무진전 정리 늦춤(10→15)
     pre_earnings_fraction: float = 1.0,
     use_breakeven: bool = True,
     use_partial: bool = True,

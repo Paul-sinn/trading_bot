@@ -64,10 +64,11 @@ def test_regime_panic_sells_full():
     assert action.sell_fraction == 1.0
 
 
-def test_regime_bearish_sells_half():
+def test_regime_bearish_no_forced_liquidation():
+    # v2(헌장 §8): C는 강제청산 안 함(0.5→0.0). 스탑 히트만 작동.
     pos = _pos()
     action = evaluate_exit(pos, _bar(high=101, low=99, close=100), regime=Regime.BEARISH)
-    assert action.sell_fraction == 0.5
+    assert action.sell_fraction == 0.0
 
 
 def test_regime_exit_can_be_toggled_off():
@@ -194,3 +195,29 @@ def test_invalid_R_disables_r_levels_but_keeps_stop():
     assert hold.sell_fraction == 0.0   # +2R 같은 R-레벨 발동 안 함
     hit = evaluate_exit(pos, _bar(high=120, low=99, close=119), regime=Regime.NORMAL_BULL)
     assert hit.sell_fraction == 1.0    # 스탑 히트는 유효
+
+
+# --- step9 v2: 청산 늦추기 (기본값 상향) ---
+
+
+def test_default_trail_mult_is_wider_4x():
+    # 명시 안 하면 trail_atr_mult 기본 4.0 → new_stop = highest - atr*4.
+    pos = _pos(highest=130.0, current_stop=100.0, partial_taken=True)
+    action = evaluate_exit(
+        pos, _bar(high=130, low=126, close=129), regime=Regime.NORMAL_BULL, atr=2.0
+    )
+    assert action.new_stop == 130.0 - 2.0 * 4.0  # 122 (3x였다면 124)
+
+
+def test_default_time_stop_is_15_days():
+    # 무진전인데 days_held=12 < 15(새 기본) → 타임스탑 미발동.
+    pos = _pos(highest=103.0)  # < entry+R(105) = 무진전
+    held12 = evaluate_exit(
+        pos, _bar(high=103, low=99, close=101), regime=Regime.NORMAL_BULL, days_held=12
+    )
+    assert held12.sell_fraction < 1.0
+    # days_held=16 >= 15 → 발동.
+    held16 = evaluate_exit(
+        pos, _bar(high=103, low=99, close=101), regime=Regime.NORMAL_BULL, days_held=16
+    )
+    assert held16.sell_fraction == 1.0

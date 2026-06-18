@@ -39,9 +39,23 @@ Benchmark: sharpe, cagr, max_drawdown   # SPY 매수후보유(동일 기간)
 RegimePerformance: regime: str, trades: int, total_pnl: float
 BacktestResult: total_trades, wins, losses, win_rate, win_loss_ratio(avg_win/avg_loss, 0분모 안전),
        sharpe(주지표), sortino, max_drawdown(분수), total_return, cagr, profit_factor, expectancy,
-       benchmark: Benchmark, trades: list[Trade], regime_breakdown: list[RegimePerformance],
+       benchmark: Benchmark(=benchmarks["SPY"], 하위호환), benchmarks: dict[str, Benchmark],
+       time_in_market_pct: float, avg_concurrent_positions: float,
+       trades: list[Trade], regime_breakdown: list[RegimePerformance],
        survivorship_warning: str   # ⚠️ 항상 채움(아래)
 ```
+
+### step8 갱신 (측정 결함 교정 — 헌장 §6/§9)
+- **CAGR 정의 고정(총수익과 수학적 일관)**: `cagr = (1 + total_return) ** (1 / years) - 1`,
+  `years = len(equity_window) / periods_per_year`. 전략·**모든 벤치마크에 동일 정의** 적용(불일치 버그 방지).
+  total_return=0 → cagr=0. (역산: 주어진 total_return·years로 정확히 재현 가능해야 한다.)
+- **다중 벤치마크(헌장 §9 — 기술주 유니버스라 SPY만으론 부족)**: `run_backtest(..., benchmark_data: dict[str, DataFrame] | None)`.
+  결과 `benchmarks: dict[str, Benchmark]`에 **SPY(항상) + benchmark_data의 각 심볼(QQQ·SMH 등)** 매수후보유
+  (CAGR·Sharpe·MDD)를 담는다. `benchmark`(단수)는 `benchmarks["SPY"]`로 하위호환 유지.
+- **노출도(time-in-market) 측정** — "현금에 앉아 Sharpe만 샀는지" 드러냄:
+  - `time_in_market_pct` = (보유 포지션≥1인 봉수 / 평가창 봉수) ∈ [0,1]. 항상 보유→1.0, 거래 0→0.0.
+  - `avg_concurrent_positions` = 평가창 봉당 평균 동시 보유 포지션 수.
+  - 평가창 = `equity_curve[warmup:]`와 동일 구간(봉별 `len(positions)`를 같은 구간에서 집계).
 - **생존편향 경고(필수)**: `survivorship_warning`에 "v1은 현재 유니버스+무료데이터 → 생존편향 내장 →
   낙관적 상한. fail-fast 용도지 라이브 greenlight 아님. 라이브 전 생존편향 없는 벤더 재검증 필요(헌장 §3)."
 

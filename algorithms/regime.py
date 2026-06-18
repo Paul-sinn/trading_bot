@@ -40,7 +40,8 @@ class RegimePolicy:
 _POLICIES: dict[Regime, RegimePolicy] = {
     Regime.NORMAL_BULL: RegimePolicy(True, 1.0, 0.0),
     Regime.NERVOUS_BULL: RegimePolicy(True, 0.5, 0.0),
-    Regime.BEARISH: RegimePolicy(False, 0.0, 0.5),
+    # v2(헌장 §8): C 강제청산 제거(0.5→0.0). 신규만 막고 기존은 개별 스탑/트레일로 관리(churn 제거).
+    Regime.BEARISH: RegimePolicy(False, 0.0, 0.0),
     Regime.PANIC: RegimePolicy(False, 0.0, 1.0),
 }
 
@@ -50,28 +51,49 @@ def _clean(prices: pd.Series) -> pd.Series:
     return pd.Series(prices, dtype="float64").dropna().reset_index(drop=True)
 
 
+def _vix_values(vix_recent: object) -> list[float]:
+    """vix_recent(스칼라 또는 시리즈)를 NaN 제거한 float 리스트로 정규화한다."""
+    if vix_recent is None:
+        return []
+    if isinstance(vix_recent, (int, float)):
+        v = float(vix_recent)
+        return [] if math.isnan(v) else [v]
+    series = pd.Series(vix_recent, dtype="float64").dropna()
+    return [float(x) for x in series.to_list()]
+
+
 def classify_regime(
     spy_prices: pd.Series,
-    vix_value: float | None,
+    vix_recent: object,
     *,
     ma_period: int = 200,
     vix_elevated: float = 20.0,
     vix_panic: float = 30.0,
+    vix_extreme: float = 35.0,
+    panic_consecutive_days: int = 2,
 ) -> Regime:
-    """SPY 가격·VIX로 4레짐을 판별한다 (헌장 §8). 먼저 맞는 조건을 채택.
+    """SPY 가격·VIX로 4레짐을 판별한다 (헌장 §8 v2). 먼저 맞는 조건을 채택.
 
-    ① VIX None/NaN → D PANIC (fail-closed: 위험 불명 = 최대 방어)
-    ② VIX > vix_panic → D PANIC (추세 무관 최우선)
+    vix_recent: 스칼라 또는 최근 VIX 시리즈(D 히스테리시스 위해 최소 2일 권장).
+    ① VIX 불명(None/NaN/빈 시리즈) → D PANIC (fail-closed)
+    ② D 확정: 최신 VIX > vix_extreme(35) OR 최근 panic_consecutive_days(2)일 연속 > vix_panic(30)
     ③ SPY 데이터 부족(< ma_period) → C BEARISH (상승추세 확인 불가)
     ④ SPY < 200d MA → C BEARISH
-    ⑤ SPY ≥ 200d MA & VIX < vix_elevated → A NORMAL_BULL
-    ⑥ 그 외(SPY ≥ 200d MA & vix_elevated ≤ VIX ≤ vix_panic) → B NERVOUS_BULL
+    ⑤ SPY ≥ 200d MA & 최신 VIX < vix_elevated → A NORMAL_BULL
+    ⑥ 그 외(SPY ≥ 200d MA & 최신 VIX ≥ vix_elevated) → B NERVOUS_BULL
     """
-    # fail-closed: VIX 불명(None/NaN) = 위험 불명 → 최대 방어(D).
-    if vix_value is None:
-        return Regime.PANIC
-    vix = float(vix_value)
-    if math.isnan(vix) or vix > vix_panic:
+    vix_vals = _vix_values(vix_recent)
+    if not vix_vals:
+        return Regime.PANIC  # fail-closed: VIX 불명 = 위험 불명 → 최대 방어
+    latest = vix_vals[-1]
+
+    # D 확정조건(히스테리시스 — 단발 VIX 스파이크로 패닉청산 방지).
+    extreme = latest > vix_extreme
+    recent = vix_vals[-panic_consecutive_days:]
+    consecutive = len(recent) >= panic_consecutive_days and all(
+        v > vix_panic for v in recent
+    )
+    if extreme or consecutive:
         return Regime.PANIC
 
     prices = _clean(spy_prices)
@@ -83,7 +105,7 @@ def classify_regime(
     if pd.isna(ma) or price < ma:
         return Regime.BEARISH
 
-    if vix < vix_elevated:
+    if latest < vix_elevated:
         return Regime.NORMAL_BULL
     return Regime.NERVOUS_BULL
 

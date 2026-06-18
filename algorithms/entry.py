@@ -37,8 +37,12 @@ def _check_gate(
     fast: int,
     slow: int,
     rs_lookback: int,
+    rs_b_margin: float,
 ) -> tuple[bool, str]:
-    """공통 게이트: 추세 UP AND 상대강도 AND 레짐 allow. (첫 실패 사유 반환)"""
+    """공통 게이트: 추세 UP AND 상대강도 AND 레짐 allow. (첫 실패 사유 반환)
+
+    레짐 B(NERVOUS_BULL)는 고확신만 허용(헌장 §8 v2): 상대강도에 추가 마진(rs_b_margin) 요구.
+    """
     if price_col not in df.columns:
         raise KeyError(f"price column '{price_col}' not found in DataFrame")
     if price_col not in spy_df.columns:
@@ -47,8 +51,14 @@ def _check_gate(
     if trend_state(df[price_col], fast=fast, slow=slow) != TrendState.UP:
         return False, "게이트 실패: 일봉 상승추세 아님(trend != UP)"
 
-    rs = relative_strength(df[price_col], spy_df[price_col], lookback=rs_lookback)
+    # B 고확신: 상대강도 마진을 요구(상위). A 등은 마진 0(기본 상대강도).
+    margin = rs_b_margin if regime == Regime.NERVOUS_BULL else 0.0
+    rs = relative_strength(
+        df[price_col], spy_df[price_col], lookback=rs_lookback, min_outperformance=margin
+    )
     if rs is not True:
+        if regime == Regime.NERVOUS_BULL:
+            return False, "게이트 실패: 레짐 B 고확신 미달(상대강도 마진 부족)"
         return False, "게이트 실패: SPY 대비 상대강도 미충족"
 
     if not policy_for(regime).allow_new_entry:
@@ -66,6 +76,7 @@ def pullback_entry(
     fast: int = 50,
     slow: int = 200,
     rs_lookback: int = 63,
+    rs_b_margin: float = 0.05,
     short_ma: int = 20,
     window: int = 5,
     touch_tol: float = 0.0,
@@ -75,7 +86,9 @@ def pullback_entry(
     게이트 통과 후 트리거: 최근 window 봉 내 직전 봉이 short_ma선 근처/아래로 눌렸다가
     (close <= ma×(1+touch_tol)) 마지막 봉이 재개(close[-1]>close[-2] 그리고 close[-1]>=ma[-1]).
     """
-    gate_ok, reason = _check_gate(df, regime, spy_df, price_col, fast, slow, rs_lookback)
+    gate_ok, reason = _check_gate(
+        df, regime, spy_df, price_col, fast, slow, rs_lookback, rs_b_margin
+    )
     if not gate_ok:
         return EntrySignal(enter=False, reason=reason)
 
@@ -114,13 +127,16 @@ def breakout_entry(
     fast: int = 50,
     slow: int = 200,
     rs_lookback: int = 63,
+    rs_b_margin: float = 0.05,
     lookback: int = 20,
 ) -> EntrySignal:
     """돌파 진입 판정 (A/B 비교군 — 헌장 §1: 눌림목과 백테스트 비교).
 
     게이트 통과 후 트리거: 최신 종가가 직전 lookback 봉의 최고 종가(Donchian 상단)를 초과.
     """
-    gate_ok, reason = _check_gate(df, regime, spy_df, price_col, fast, slow, rs_lookback)
+    gate_ok, reason = _check_gate(
+        df, regime, spy_df, price_col, fast, slow, rs_lookback, rs_b_margin
+    )
     if not gate_ok:
         return EntrySignal(enter=False, reason=reason)
 

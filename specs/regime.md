@@ -74,3 +74,18 @@ class Regime(str, Enum):
 - 사이징 실제 적용 — step2 sizing(size_multiplier 소비).
 - 포지션 청산 실행 — step4 exits(exit_fraction 소비).
 - MDD 20% 하드차단 연동(RiskAgent) — 기존 backend/agents 영역.
+
+---
+
+## step9 갱신 (레짐 v2 — v1 churn 교정, 헌장 §8)
+
+⚠️ v1에서 C의 50% 강제청산이 레짐 flip-flop churn(거래 119→300, Sharpe 1.27→0.85)을 냈다 → 구조 교정.
+
+- **`classify_regime` 시그니처 변경**: `vix_value`(스칼라) → `vix_recent`(스칼라 또는 **최근 VIX 시리즈**).
+  D 히스테리시스를 위해 시리즈(최소 2일) 권장. 스칼라도 허용(하위호환 — 단발은 consecutive D 불가, extreme만).
+- **D 확정 조건(히스테리시스)**: `VIX > vix_extreme(35)` OR `최근 panic_consecutive_days(2)일 연속 > vix_panic(30)`.
+  단발 VIX 스파이크로 패닉청산 방지. 파라미터: `vix_extreme=35.0`, `vix_panic=30.0`(이제 연속 임계), `panic_consecutive_days=2`.
+- **분류 순서(헌장 §8)**: ① D(위 확정조건) → ② C(SPY<200d & not D) → ③ B(SPY>200d & VIX≥20 & not D) → ④ A(SPY>200d & VIX<20).
+- **RegimePolicy 변경**: **C `exit_fraction_on_break` 0.5 → 0.0**(강제청산 제거 — 기존 포지션은 개별 스탑/트레일로 관리, 추가매수만 금지).
+  D는 1.0(결정론 100% 청산) 유지. A(T,1.0,0.0)/B(T,0.5,0.0)/C(F,0.0,**0.0**)/D(F,0.0,1.0).
+- VIX None/NaN/빈 시리즈 → PANIC(fail-closed) 유지. 임계값은 시작값 — 편향 없는 데이터(B단계)서 튜닝, 편향 데이터 과튜닝 금지.

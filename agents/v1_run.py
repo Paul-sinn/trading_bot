@@ -20,6 +20,7 @@ from agents.data_adapter import SURVIVORSHIP_WARNING, DailyDataProvider
 from algorithms.backtest import (
     BacktestParams,
     BacktestResult,
+    Benchmark,
     CostModel,
     ExitLayers,
     run_backtest,
@@ -33,17 +34,21 @@ class GateThresholds:
     sharpe_min: float = 1.0
     mdd_design: float = 0.15
     mdd_hard: float = 0.20
+    abs_return_floor: float = 0.5  # 전략 CAGR ≥ 최고 벤치마크 CAGR × 이 비율(절대수익 점검, 헌장 §9)
 
 
 @dataclass(frozen=True)
 class GateChecklist:
     sharpe_pass: bool
-    beats_spy_sharpe: bool
+    beats_benchmarks: bool  # QQQ·SMH 중 강한 쪽 Sharpe 대비 우위 (헌장 §9)
+    abs_return_ok: bool  # 절대수익이 인덱스에 크게 안 뒤짐
     mdd_design_pass: bool
     mdd_hard_pass: bool
     overall_pass: bool
     sharpe: float
-    benchmark_sharpe: float
+    cagr: float
+    toughest_benchmark_sharpe: float
+    best_benchmark_cagr: float
     max_drawdown: float
     thresholds: GateThresholds
 
@@ -81,43 +86,71 @@ class V1Report:
 def evaluate_gate(
     sharpe: float,
     max_drawdown: float,
-    benchmark_sharpe: float,
+    cagr: float,
+    benchmarks: dict[str, "Benchmark"],
     thresholds: GateThresholds = GateThresholds(),
 ) -> GateChecklist:
-    """헌장 §9/§10 게이트 판정(판단 보조 — overall_pass여도 최종 판정은 사람)."""
+    """헌장 §9/§10 게이트 판정 — QQQ/SMH 기준(SPY 단독 아님). 최종 판정은 사람."""
+    # 가장 빡센 경쟁자: QQQ·SMH(있으면) 중 강한 쪽, 없으면 전체 벤치마크 중 max.
+    competitors = [
+        b for name, b in benchmarks.items() if name in ("QQQ", "SMH")
+    ] or list(benchmarks.values())
+    toughest_sharpe = max((b.sharpe for b in competitors), default=0.0)
+    best_cagr = max((b.cagr for b in benchmarks.values()), default=0.0)
+
     sharpe_pass = sharpe >= thresholds.sharpe_min
-    beats_spy = sharpe > benchmark_sharpe
+    beats_benchmarks = sharpe > toughest_sharpe
+    abs_return_ok = cagr >= best_cagr * thresholds.abs_return_floor
     mdd_design_pass = max_drawdown <= thresholds.mdd_design
     mdd_hard_pass = max_drawdown <= thresholds.mdd_hard
     return GateChecklist(
         sharpe_pass=sharpe_pass,
-        beats_spy_sharpe=beats_spy,
+        beats_benchmarks=beats_benchmarks,
+        abs_return_ok=abs_return_ok,
         mdd_design_pass=mdd_design_pass,
         mdd_hard_pass=mdd_hard_pass,
-        overall_pass=sharpe_pass and beats_spy and mdd_hard_pass,
+        overall_pass=(
+            sharpe_pass and beats_benchmarks and abs_return_ok and mdd_hard_pass
+        ),
         sharpe=sharpe,
-        benchmark_sharpe=benchmark_sharpe,
+        cagr=cagr,
+        toughest_benchmark_sharpe=toughest_sharpe,
+        best_benchmark_cagr=best_cagr,
         max_drawdown=max_drawdown,
         thresholds=thresholds,
     )
 
 
 def calibrate_fraction(
-    current_fraction: float, realized_mdd: float, mdd_target: float = 0.15
+    current_fraction: float,
+    realized_mdd: float,
+    mdd_target: float = 0.15,
+    *,
+    mdd_floor: float = 0.12,
 ) -> FractionCalibration:
-    """fraction을 MDD 설계목표(≤15%)로 역튜닝 제안(헌장 §6·§7). 적용은 사람 몫."""
-    if realized_mdd > mdd_target:
-        suggested = current_fraction * (mdd_target / realized_mdd)
-        suggested = max(0.0, min(current_fraction, suggested))
+    """공격성(=max_risk_pct/fraction)을 MDD 예산 밴드[mdd_floor, mdd_target]로 양방향 제안(헌장 §6).
+
+    MDD > target → 축소 / MDD < floor → 상향(예산 미사용) / band 내 → 유지. realized_mdd≤0 → 유지. 적용은 사람.
+    """
+    if realized_mdd <= 0:
+        suggested = current_fraction
+        note = f"실현 MDD {realized_mdd:.1%} → 측정 불가, fraction 유지."
+    elif realized_mdd > mdd_target:
+        suggested = max(0.0, current_fraction * (mdd_target / realized_mdd))
         note = (
-            f"실현 MDD {realized_mdd:.1%} > 목표 {mdd_target:.0%} → fraction을 "
-            f"{current_fraction:.3f}에서 {suggested:.3f}로 축소 제안(적용은 사람)."
+            f"실현 MDD {realized_mdd:.1%} > 목표 {mdd_target:.0%} → fraction "
+            f"{current_fraction:.3f}→{suggested:.3f} 축소 제안(적용은 사람)."
+        )
+    elif realized_mdd < mdd_floor:
+        suggested = current_fraction * (mdd_floor / realized_mdd)
+        note = (
+            f"실현 MDD {realized_mdd:.1%} < 하한 {mdd_floor:.0%} → 예산 미사용 → fraction "
+            f"{current_fraction:.3f}→{suggested:.3f} 상향 제안(편향없는 데이터서 확정)."
         )
     else:
         suggested = current_fraction
         note = (
-            f"실현 MDD {realized_mdd:.1%} ≤ 목표 {mdd_target:.0%} → fraction 유지"
-            f"(더 키우지 않음 — MDD governor)."
+            f"실현 MDD {realized_mdd:.1%} ∈ 예산밴드[{mdd_floor:.0%},{mdd_target:.0%}] → fraction 유지."
         )
     return FractionCalibration(
         current_fraction=current_fraction,
@@ -202,6 +235,7 @@ def run_v1(
     end: str | None = None,
     *,
     spy_symbol: str = "SPY",
+    benchmark_symbols: tuple[str, ...] = ("QQQ", "SMH"),
     params: BacktestParams = BacktestParams(),
     costs: CostModel = CostModel(),
     thresholds: GateThresholds = GateThresholds(),
@@ -212,12 +246,26 @@ def run_v1(
     vix = provider.get_vix(start, end)
     price_data, spy_a, vix_a = _align(raw, spy, vix)
 
+    # 다중 벤치마크(QQQ·SMH 등) 로드 후 공통 인덱스로 정렬(헌장 §9). 어댑터에 없으면 생략.
+    benchmark_data: dict = {}
+    for sym in benchmark_symbols:
+        try:
+            bdf = provider.get_ohlcv(sym, start, end)
+        except KeyError:
+            continue
+        benchmark_data[sym] = bdf.reindex(spy_a.index)
+
     strategy = run_backtest(
-        price_data, spy_a, vix_a, params=params, costs=costs, exit_layers=ExitLayers()
+        price_data, spy_a, vix_a, params=params, costs=costs,
+        exit_layers=ExitLayers(), benchmark_data=benchmark_data,
     )
     ab = _exit_layer_ab(price_data, spy_a, vix_a, params, costs)
     gate = evaluate_gate(
-        strategy.sharpe, strategy.max_drawdown, strategy.benchmark.sharpe, thresholds
+        strategy.sharpe,
+        strategy.max_drawdown,
+        strategy.cagr,
+        strategy.benchmarks,
+        thresholds,
     )
     calib = calibrate_fraction(
         params.base_fraction, strategy.max_drawdown, thresholds.mdd_design
@@ -234,29 +282,55 @@ def run_v1(
 def format_report(report: V1Report) -> str:
     """사람이 읽는 리포트 텍스트. 최종 GO/NO-GO는 사람이 판정."""
     s = report.strategy
-    b = s.benchmark
     g = report.gate
     lines: list[str] = []
     lines.append("=" * 72)
     lines.append("⚠️ 생존편향 경고: " + report.survivorship_warning)
     lines.append("=" * 72)
     lines.append("")
-    lines.append("[전략 vs SPY 벤치마크 — 위험조정 우위가 승리 (헌장 §9)]")
-    lines.append(f"  {'지표':<14}{'전략':>14}{'SPY':>14}")
-    lines.append(f"  {'Sharpe':<14}{s.sharpe:>14.3f}{b.sharpe:>14.3f}")
-    lines.append(f"  {'Sortino':<14}{s.sortino:>14.3f}{'-':>14}")
-    lines.append(f"  {'MaxDrawdown':<14}{s.max_drawdown:>14.2%}{b.max_drawdown:>14.2%}")
-    lines.append(f"  {'CAGR':<14}{s.cagr:>14.2%}{b.cagr:>14.2%}")
-    lines.append(f"  {'WinRate':<14}{s.win_rate:>14.2%}{'-':>14}")
-    lines.append(f"  {'ProfitFactor':<14}{s.profit_factor:>14.3f}{'-':>14}")
-    lines.append(f"  {'Expectancy':<14}{s.expectancy:>14.2f}{'-':>14}")
-    lines.append(f"  {'Trades':<14}{s.total_trades:>14d}{'-':>14}")
+    # 전략 vs 다중 벤치마크(SPY/QQQ/SMH 등) 나란히 — 위험조정 우위가 승리 (헌장 §9).
+    bench_names = list(s.benchmarks)
+    lines.append("[전략 vs 벤치마크 — 위험조정 우위가 승리 (헌장 §9: SPY+QQQ+SMH)]")
+    header = f"  {'지표':<14}{'전략':>12}" + "".join(f"{name:>12}" for name in bench_names)
+    lines.append(header)
+    lines.append(
+        f"  {'Sharpe':<14}{s.sharpe:>12.3f}"
+        + "".join(f"{s.benchmarks[n].sharpe:>12.3f}" for n in bench_names)
+    )
+    lines.append(
+        f"  {'CAGR':<14}{s.cagr:>12.2%}"
+        + "".join(f"{s.benchmarks[n].cagr:>12.2%}" for n in bench_names)
+    )
+    lines.append(
+        f"  {'MaxDrawdown':<14}{s.max_drawdown:>12.2%}"
+        + "".join(f"{s.benchmarks[n].max_drawdown:>12.2%}" for n in bench_names)
+    )
+    lines.append(f"  {'TotalReturn':<14}{s.total_return:>12.2%}")
+    lines.append(f"  {'Sortino':<14}{s.sortino:>12.3f}")
+    lines.append(f"  {'WinRate':<14}{s.win_rate:>12.2%}")
+    lines.append(f"  {'ProfitFactor':<14}{s.profit_factor:>12.3f}")
+    lines.append(f"  {'Expectancy':<14}{s.expectancy:>12.2f}")
+    lines.append(f"  {'Trades':<14}{s.total_trades:>12d}")
     lines.append("")
-    lines.append("[게이트 체크리스트 (헌장 §10) — 판단 보조, 최종 판정은 사람]")
-    lines.append(f"  Sharpe ≥ {g.thresholds.sharpe_min}      : {'PASS' if g.sharpe_pass else 'FAIL'}")
-    lines.append(f"  SPY 대비 Sharpe 우위   : {'PASS' if g.beats_spy_sharpe else 'FAIL'}")
-    lines.append(f"  MDD ≤ {g.thresholds.mdd_design:.0%} (설계목표): {'PASS' if g.mdd_design_pass else 'FAIL'}")
-    lines.append(f"  MDD ≤ {g.thresholds.mdd_hard:.0%} (하드차단): {'PASS' if g.mdd_hard_pass else 'FAIL'}")
+    # 노출도(time-in-market) — 현금에 앉아 Sharpe만 샀는지 점검 (헌장 §9).
+    lines.append("[노출도 (time-in-market) — 절대수익/현금비중 점검 (헌장 §9)]")
+    lines.append(
+        f"  time_in_market={s.time_in_market_pct:.1%}  "
+        f"avg_concurrent_positions={s.avg_concurrent_positions:.2f}"
+    )
+    lines.append("")
+    lines.append("[게이트 체크리스트 (헌장 §9/§10) — QQQ/SMH 기준, 판단 보조, 최종 판정은 사람]")
+    lines.append(f"  Sharpe ≥ {g.thresholds.sharpe_min}              : {'PASS' if g.sharpe_pass else 'FAIL'}")
+    lines.append(
+        f"  QQQ/SMH 대비 Sharpe 우위   : {'PASS' if g.beats_benchmarks else 'FAIL'}"
+        f"  (전략 {g.sharpe:.2f} vs 최강 {g.toughest_benchmark_sharpe:.2f})"
+    )
+    lines.append(
+        f"  절대수익 인덱스 대비 양호  : {'PASS' if g.abs_return_ok else 'FAIL'}"
+        f"  (전략 CAGR {g.cagr:.1%} vs 최고 {g.best_benchmark_cagr:.1%} × {g.thresholds.abs_return_floor:.0%})"
+    )
+    lines.append(f"  MDD ≤ {g.thresholds.mdd_design:.0%} (설계목표)    : {'PASS' if g.mdd_design_pass else 'FAIL'}")
+    lines.append(f"  MDD ≤ {g.thresholds.mdd_hard:.0%} (하드차단)    : {'PASS' if g.mdd_hard_pass else 'FAIL'}")
     lines.append("")
     lines.append("[청산 레이어 A/B (헌장 §7-2 — 각 레이어가 Sharpe 개선하며 총수익 안 죽일 때만 채택)]")
     lines.append(f"  {'레이어':<24}{'TotalRet':>12}{'Sharpe':>10}{'MDD':>10}{'Trades':>8}")

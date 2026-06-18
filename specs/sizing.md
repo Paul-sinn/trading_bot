@@ -81,3 +81,15 @@ class PositionPlan:
 - 켈리 입력(win_rate/ratio/sample_size) 추정 = 백테스트 엔진(step5~7).
 - 실제 주문 실행/체결/슬리피지(executor), RiskAgent kill-switch 루프.
 - I/O. 입력값은 호출자가 준비한다.
+
+---
+
+## step10 갱신 (공격성 = MDD 예산 다 쓰기, 헌장 §6)
+
+- ⚠️ **공격성 레버는 `max_risk_pct`(매매당 리스크 예산)**다. `position_size`가 risk를 `equity×max_risk_pct`로
+  하드캡(ADR-003)하므로 `base_fraction`을 1.0 위로 올려도 효과 없음 — 실제로 예산을 키우려면 max_risk_pct를 올린다.
+- 헌장 §6: MDD를 *덜* 쓰는 것도 실수(v1은 9.8%만 씀). max_risk_pct를 올려 백테스트 MDD가 설계 12~15%에 닿게 한다.
+- **불변(ADR-003·20% 천장)**: 어떤 max_risk_pct에서도 매매당 risk_amount ≤ equity×max_risk_pct, 포트폴리오 MDD ≤ 20%.
+  max_risk_pct↑ → MDD·총수익 단조 증가하되 20% 천장 안에서.
+- ⚠️ **편향 데이터 과튜닝 금지**: 기본 max_risk_pct는 보수적 유지(0.01). 공격적 값은 calibrate 제안 + 재실행으로
+  시연하되 **확정은 편향 없는 데이터(B단계)**. base_fraction은 콜드스타트 고정비율(1.0=예산 풀사용)로 유지.

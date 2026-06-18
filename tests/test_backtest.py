@@ -12,6 +12,7 @@ from algorithms.backtest import (
     BacktestResult,
     CostModel,
     ExitLayers,
+    _equity_metrics,
     run_backtest,
     walk_forward,
 )
@@ -209,6 +210,56 @@ def test_exit_layers_ab_changes_result():
 
 
 # --- 워크포워드 ---
+
+
+# --- step8: CAGR 일관성 ---
+
+
+def test_cagr_round_trips_with_total_return():
+    eq = np.array([100.0, 150.0, 225.0])  # total_return = 1.25
+    m = _equity_metrics(eq, periods_per_year=1)
+    years = len(eq) / 1
+    expected = (1.0 + m["total_return"]) ** (1.0 / years) - 1.0
+    assert abs(m["cagr"] - expected) < 1e-12
+
+
+def test_cagr_zero_when_no_return():
+    m = _equity_metrics(np.array([100.0, 100.0, 100.0]), periods_per_year=252)
+    assert m["cagr"] == 0.0
+    assert m["total_return"] == 0.0
+
+
+# --- step8: 다중 벤치마크 (SPY/QQQ/SMH) ---
+
+
+def test_benchmarks_include_spy_qqq_smh():
+    pd_, spy, vix = _make_inputs(_uptrend_with_pullbacks())
+    n = len(spy)
+    bench_data = {
+        "QQQ": _ohlcv(np.linspace(100, 200, n)),
+        "SMH": _ohlcv(np.linspace(100, 250, n)),
+    }
+    res = run_backtest(pd_, spy, vix, benchmark_data=bench_data)
+    assert set(res.benchmarks) >= {"SPY", "QQQ", "SMH"}
+    for b in res.benchmarks.values():
+        assert hasattr(b, "sharpe") and hasattr(b, "cagr") and hasattr(b, "max_drawdown")
+    assert res.benchmark is res.benchmarks["SPY"]  # 하위호환
+
+
+# --- step8: 노출도 (time-in-market) ---
+
+
+def test_time_in_market_in_range():
+    pd_, spy, vix = _make_inputs(_uptrend_with_pullbacks())
+    res = run_backtest(pd_, spy, vix)
+    assert 0.0 <= res.time_in_market_pct <= 1.0
+    assert res.avg_concurrent_positions >= 0.0
+
+
+def test_flat_data_zero_exposure():
+    pd_, spy, vix = _make_inputs(np.full(300, 100.0))
+    res = run_backtest(pd_, spy, vix)
+    assert res.time_in_market_pct == 0.0  # 거래 0 → 노출 0
 
 
 def test_walk_forward_returns_train_test():

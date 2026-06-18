@@ -139,3 +139,24 @@ def test_reason_is_populated():
     close = _downtrend()
     sig = pullback_entry(_df(close), regime=Regime.NORMAL_BULL, spy_df=_weak_spy(len(close)))
     assert isinstance(sig.reason, str) and sig.reason
+
+
+# --- step9 v2: B(NERVOUS_BULL) 고확신 게이트 ---
+
+
+def test_b_regime_blocks_thin_outperformer_but_a_allows():
+    # 얇은 상대강도 우위: A는 통과, B는 고확신(마진) 미달로 차단.
+    asset = _df(np.linspace(100, 200, 260))   # 63d 수익 ~13.8%
+    spy = _df(np.linspace(100, 195, 260))     # 63d 수익 ~13.4% (마진 ~0.4%p)
+    a = breakout_entry(asset, regime=Regime.NORMAL_BULL, spy_df=spy)
+    b = breakout_entry(asset, regime=Regime.NERVOUS_BULL, spy_df=spy, rs_b_margin=0.02)
+    assert a.enter is True
+    assert b.enter is False
+
+
+def test_b_regime_allows_strong_outperformer():
+    # 강한 상대강도 우위 → B 고확신 통과.
+    asset = _df(np.linspace(100, 300, 260))
+    spy = _df(np.linspace(100, 150, 260))
+    b = breakout_entry(asset, regime=Regime.NERVOUS_BULL, spy_df=spy, rs_b_margin=0.02)
+    assert b.enter is True

@@ -88,3 +88,12 @@ new_stop = candidate if candidate > current_stop else None
 ## 비범위
 - 체결·슬리피지·실제 매도 주문(executor/엔진), 포지션 상태 전이 적용(엔진이 ExitAction을 받아 다음 Position 조립).
 - 레짐 *분류*(step1), 진입(step3), 사이징(step2). I/O(step6).
+
+---
+
+## step9 갱신 (청산 늦추기 + C 강제청산 제거, 헌장 §7-2/§8)
+
+- **청산을 너무 빨리 안 하게(승자 태우기)**: 기본값 상향 — `trail_atr_mult` 3.0 → **4.0**(트레일 더 넓게),
+  `time_stop_days` 10 → **15**(무진전 정리 늦춤). 값은 시작값 — 편향 없는 데이터서 튜닝.
+- **C 강제청산 제거**: ⑤ 레짐청산은 `policy_for(regime).exit_fraction_on_break`를 읽으므로, regime.py에서 C를 0.0으로
+  바꾸면 **C에서 evaluate_exit가 강제청산하지 않는다(스탑 히트만 작동)**. D는 1.0 유지. exits.py 로직 자체는 무변경(정책만 변경).

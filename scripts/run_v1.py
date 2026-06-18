@@ -16,6 +16,7 @@ import argparse
 
 from agents.data_adapter import FreeDailyProvider
 from agents.v1_run import format_report, run_v1
+from algorithms.backtest import BacktestParams
 
 
 def main() -> None:
@@ -24,8 +25,14 @@ def main() -> None:
     parser.add_argument("--spy-symbol", default="SPY")
     parser.add_argument("--start", default=None)
     parser.add_argument("--end", default=None)
+    # step10: 공격성(매매당 리스크 예산) 시연용. 기본 보수적(0.01). ⚠️ 값 확정은 편향없는 데이터에서.
+    parser.add_argument("--max-risk-pct", type=float, default=0.01)
+    parser.add_argument("--initial-capital", type=float, default=100_000.0)
     args = parser.parse_args()
 
+    params = BacktestParams(
+        max_risk_pct=args.max_risk_pct, initial_capital=args.initial_capital
+    )
     # FreeDailyProvider는 yfinance를 지연 import한다(미설치 시 명확한 안내).
     provider = FreeDailyProvider()
     report = run_v1(
@@ -34,6 +41,7 @@ def main() -> None:
         args.start,
         args.end,
         spy_symbol=args.spy_symbol,
+        params=params,
     )
     print(format_report(report))
 

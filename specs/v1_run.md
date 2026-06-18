@@ -25,6 +25,13 @@ V1Report: survivorship_warning: str(상단), strategy: BacktestResult, gate: Gat
           exit_layer_ab: list[ExitLayerAB], fraction_calibration: FractionCalibration
 ```
 
+### step8 갱신 (다중 벤치마크 로드 + 노출도 — 헌장 §9)
+- `run_v1`은 어댑터로 **QQQ·SMH도 로드**(SPY 외에)해 `_align`으로 공통 인덱스에 맞춰 `run_backtest(..., benchmark_data=...)`로 주입.
+  → `strategy.benchmarks`에 SPY·QQQ·SMH 3개. 어댑터에 해당 심볼이 없으면 그 벤치마크만 생략(에러 없이).
+- `benchmark_symbols: tuple[str,...] = ("QQQ", "SMH")` 파라미터(SPY는 spy_symbol로 항상). 청산 레이어 A/B 런들에도 동일 주입.
+- `format_report`: **SPY·QQQ·SMH 나란히**(CAGR·Sharpe·MDD) + **노출도(time_in_market·avg_concurrent)** 출력.
+- ⚠️ 게이트 판정 기준의 QQQ/SMH 전환은 **step10**에서(이 step은 측정·표시까지). evaluate_gate는 step8에선 불변.
+
 ## 함수
 
 ### `evaluate_gate(sharpe, max_drawdown, benchmark_sharpe, thresholds) -> GateChecklist` (순수)
@@ -56,3 +63,17 @@ V1Report: survivorship_warning: str(상단), strategy: BacktestResult, gate: Gat
 ## 비범위
 - 자동 라이브 진입·실주문(executor), 생존편향 없는 벤더 재검증(라이브 전, 별도), 페이퍼/소액 라이브(게이트 통과 後 사람 결정).
 - 1시간봉(v2). `scripts/run_v1.py`는 실데이터 CLI(네트워크) — 수동 실행, CI 아님.
+
+---
+
+## step10 갱신 (게이트 = QQQ/SMH 기준 + 양방향 캘리브레이션, 헌장 §9)
+
+- **게이트 기준 전환(SPY 단독 금지)**: `evaluate_gate(sharpe, max_drawdown, cagr, benchmarks: dict[str,Benchmark], thresholds)`.
+  - `beats_benchmarks` = 전략 Sharpe > **QQQ·SMH 중 강한 쪽**(가장 빡센 경쟁자) Sharpe. (QQQ/SMH 없으면 전체 벤치마크 max로 폴백.)
+  - `abs_return_ok` = 전략 CAGR ≥ (최고 벤치마크 CAGR × `abs_return_floor`) — "절대수익이 인덱스에 크게 안 뒤짐"(헌장 §9 v1 교훈).
+  - `overall_pass` = sharpe_pass AND beats_benchmarks AND abs_return_ok AND mdd_hard_pass. (design MDD는 별도 보고.)
+- `GateThresholds`에 `abs_return_floor: float = 0.5` 추가. `GateChecklist`: beats_spy_sharpe → **beats_benchmarks**, **abs_return_ok** 추가, toughest_benchmark_sharpe·best_benchmark_cagr·cagr 보고.
+- **calibrate_fraction 양방향(헌장 §6)**: MDD > mdd_target(15%) → 축소 제안 / MDD < mdd_floor(12%) → **상향 제안**(예산 미사용) /
+  band[12%,15%] 내 → 유지. realized_mdd ≤ 0 → 유지(분모 안전). `calibrate_fraction(current, realized_mdd, mdd_target=0.15, *, mdd_floor=0.12)`.
+- run_v1: evaluate_gate에 strategy.cagr·benchmarks 전달. format_report 게이트 섹션을 QQQ/SMH·절대수익·노출도 반영.
+- ⚠️ go/no-go는 사람: "비용·편향 감안해도 QQQ/SMH를 위험조정으로 이기고 절대수익도 부끄럽지 않은가?" 생존편향 제거 전 라이브 금지.

@@ -112,11 +112,16 @@ def trend_state(prices: pd.Series, fast: int = 50, slow: int = 200) -> TrendStat
 
 
 def relative_strength(
-    asset_prices: pd.Series, benchmark_prices: pd.Series, lookback: int = 63
+    asset_prices: pd.Series,
+    benchmark_prices: pd.Series,
+    lookback: int = 63,
+    *,
+    min_outperformance: float = 0.0,
 ) -> bool | None:
     """SPY(벤치마크) 대비 상대강도 (헌장 §1 보조 필터: 시장보다 강한 종목).
 
-    lookback 기간 자산 수익률 > 벤치마크 수익률 → True. 약하면 False.
+    lookback 기간 자산 수익률 > 벤치마크 수익률 + min_outperformance → True. 약하면 False.
+    min_outperformance(기본 0.0)는 "상대강도 상위" 마진 — step3 B레짐 고확신 게이트가 양수로 쓴다(헌장 §8).
     둘 중 하나라도 워밍업 전(길이 ≤ lookback)이면 None(판정 불가).
     호출자가 두 시리즈를 같은 시점 말단으로 정렬해 전달한다고 가정한다.
     """
@@ -127,7 +132,7 @@ def relative_strength(
 
     asset_ret = asset.iloc[-1] / asset.iloc[-1 - lookback] - 1.0
     bench_ret = bench.iloc[-1] / bench.iloc[-1 - lookback] - 1.0
-    return bool(asset_ret > bench_ret)
+    return bool(asset_ret > bench_ret + min_outperformance)
 
 
 def rsi_value(prices: pd.Series, period: int = 14) -> float | None:

@@ -50,7 +50,7 @@ class BacktestParams:
     base_fraction: float = 1.0  # 콜드스타트 고정비율(켈리 미사용, 헌장 §7)
     atr_period: int = 14
     atr_stop_mult: float = 2.0
-    trail_atr_mult: float = 3.0
+    trail_atr_mult: float = 4.0  # v2(헌장 §8): 트레일 더 넓게(승자 태우기)
     warmup: int = 200
     periods_per_year: int = 252
     price_col: str = "close"
@@ -119,7 +119,10 @@ class BacktestResult:
     cagr: float
     profit_factor: float
     expectancy: float
-    benchmark: Benchmark
+    benchmark: Benchmark  # = benchmarks["SPY"] (하위호환)
+    benchmarks: dict[str, Benchmark]  # SPY + QQQ/SMH 등 (헌장 §9)
+    time_in_market_pct: float  # 노출도: 보유 봉수/평가창 봉수 ∈ [0,1]
+    avg_concurrent_positions: float
     trades: list[Trade]
     regime_breakdown: list[RegimePerformance]
     survivorship_warning: str = _SURVIVORSHIP_WARNING
@@ -174,19 +177,30 @@ def _equity_metrics(equity: np.ndarray, periods_per_year: int) -> dict[str, floa
     drawdown = (equity - peak) / peak
     out["max_drawdown"] = float(-drawdown.min())  # 양수 분수
 
-    out["total_return"] = float(equity[-1] / equity[0] - 1.0)
+    total_return = float(equity[-1] / equity[0] - 1.0)
+    out["total_return"] = total_return
+    # CAGR은 총수익과 수학적으로 일관(역산 가능): (1+total_return)^(1/years)-1. 동일 정의를 벤치마크에도.
     years = len(equity) / periods_per_year
-    if years > 0 and equity[-1] > 0:
-        out["cagr"] = float((equity[-1] / equity[0]) ** (1.0 / years) - 1.0)
+    if years > 0 and (1.0 + total_return) > 0:
+        out["cagr"] = float((1.0 + total_return) ** (1.0 / years) - 1.0)
     return out
 
 
-def _benchmark(spy_close: np.ndarray, periods_per_year: int) -> Benchmark:
-    """SPY 매수후보유 벤치마크(동일 기간)."""
-    m = _equity_metrics(spy_close, periods_per_year)
+def _benchmark(close: np.ndarray, periods_per_year: int) -> Benchmark:
+    """매수후보유 벤치마크(동일 기간)."""
+    m = _equity_metrics(close, periods_per_year)
     return Benchmark(
         sharpe=m["sharpe"], cagr=m["cagr"], max_drawdown=m["max_drawdown"]
     )
+
+
+def _exposure(concurrent: list[int]) -> tuple[float, float]:
+    """노출도: (time_in_market_pct, avg_concurrent_positions). 빈 구간은 (0,0)."""
+    if not concurrent:
+        return 0.0, 0.0
+    in_market = sum(1 for c in concurrent if c > 0) / len(concurrent)
+    avg = sum(concurrent) / len(concurrent)
+    return float(in_market), float(avg)
 
 
 def _trade_stats(trades: list[Trade]) -> dict[str, float]:
@@ -229,8 +243,12 @@ def run_backtest(
     params: BacktestParams = BacktestParams(),
     costs: CostModel = CostModel(),
     exit_layers: ExitLayers = ExitLayers(),
+    benchmark_data: dict[str, pd.DataFrame] | None = None,
 ) -> BacktestResult:
-    """v1 일봉 백테스트. 신호=종가 / 체결=다음날 시가 (미래참조 차단)."""
+    """v1 일봉 백테스트. 신호=종가 / 체결=다음날 시가 (미래참조 차단).
+
+    benchmark_data: SPY 외 추가 벤치마크(QQQ·SMH 등) 가격 DataFrame. spy_df와 동일 날짜인덱스 정렬 가정.
+    """
     symbols = sorted(price_data)
     pc = params.price_col
     n = len(spy_df)
@@ -253,17 +271,19 @@ def run_backtest(
     positions: dict[str, _Open] = {}
     trades: list[Trade] = []
     equity_curve: list[float] = []
+    concurrent: list[int] = []  # 봉별 동시 보유 포지션 수(노출도 측정)
 
     for t in range(n):
         equity = cash + sum(p.qty * closes[s][t] for s, p in positions.items())
         equity_curve.append(equity)
+        concurrent.append(len(positions))
 
         if t < params.warmup or t >= n - 1:
             continue
 
         regime = classify_regime(
             pd.Series(spy_close[: t + 1]),
-            float(vix[t]),
+            pd.Series(vix[: t + 1]),  # v2: VIX 시리즈(D 히스테리시스 — 2일 연속 판정)
             ma_period=params.slow,
         )
 
@@ -376,12 +396,26 @@ def run_backtest(
             )
 
     # --- 지표 ---
-    eq = np.array(equity_curve[params.warmup :], dtype=float)
+    warmup = params.warmup
+    eq = np.array(equity_curve[warmup:], dtype=float)
+    conc = concurrent[warmup:]
     if eq.size < 2:
         eq = np.array(equity_curve, dtype=float)
+        conc = concurrent
     m = _equity_metrics(eq, params.periods_per_year)
     stats = _trade_stats(trades)
-    bench = _benchmark(spy_close[params.warmup :], params.periods_per_year)
+
+    # 벤치마크: SPY(항상) + benchmark_data(QQQ·SMH 등). 동일 평가창([warmup:]).
+    benchmarks: dict[str, Benchmark] = {
+        "SPY": _benchmark(spy_close[warmup:], params.periods_per_year)
+    }
+    for sym, df in (benchmark_data or {}).items():
+        benchmarks[sym] = _benchmark(
+            df[pc].to_numpy(dtype=float)[warmup:], params.periods_per_year
+        )
+    bench = benchmarks["SPY"]
+
+    time_in_market, avg_concurrent = _exposure(conc)
 
     return BacktestResult(
         total_trades=len(trades),
@@ -397,6 +431,9 @@ def run_backtest(
         profit_factor=stats["profit_factor"],
         expectancy=stats["expectancy"],
         benchmark=bench,
+        benchmarks=benchmarks,
+        time_in_market_pct=time_in_market,
+        avg_concurrent_positions=avg_concurrent,
         trades=trades,
         regime_breakdown=_regime_breakdown(trades),
     )

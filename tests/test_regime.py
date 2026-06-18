@@ -42,13 +42,36 @@ def test_bearish_spy_below_200d():
     assert classify_regime(_below_200d(), 15.0) == Regime.BEARISH
 
 
-def test_panic_vix_above_30_overrides_trend():
-    # VIX > 30 → D, 추세(상승)와 무관하게 최우선.
-    assert classify_regime(_above_200d(), 35.0) == Regime.PANIC
+def test_panic_vix_extreme_overrides_trend():
+    # v2: VIX > 35(extreme) → D, 추세(상승)와 무관하게 최우선.
+    assert classify_regime(_above_200d(), 36.0) == Regime.PANIC
 
 
 def test_panic_overrides_even_in_bear():
     assert classify_regime(_below_200d(), 40.0) == Regime.PANIC
+
+
+# --- v2: D 확정조건(히스테리시스) ---
+
+
+def test_single_day_vix_31_is_not_panic():
+    # 단발 VIX 31(1일) → D 아님(extreme 35 미만 + 2일연속 아님) → 불 구간이면 B.
+    assert classify_regime(_above_200d(), 31.0) == Regime.NERVOUS_BULL
+
+
+def test_two_consecutive_vix_above_30_is_panic():
+    # VIX>30 이 2일 연속 → D 확정.
+    assert classify_regime(_above_200d(), pd.Series([31.0, 31.0])) == Regime.PANIC
+
+
+def test_one_day_above_30_then_below_is_not_panic():
+    # 직전엔 31이었어도 최신이 28이면 2일연속 아님 → D 아님.
+    assert classify_regime(_above_200d(), pd.Series([31.0, 28.0])) == Regime.NERVOUS_BULL
+
+
+def test_single_extreme_in_series_is_panic():
+    # 시리즈 최신값이 36(extreme) → D.
+    assert classify_regime(_above_200d(), pd.Series([15.0, 36.0])) == Regime.PANIC
 
 
 # --- 경계값 ---
@@ -87,8 +110,12 @@ def test_spy_insufficient_data_is_bearish():
 
 
 def test_custom_thresholds_are_parameterized():
-    # 임계값을 파라미터로 노출 — vix_panic을 낮추면 같은 VIX가 PANIC이 된다.
-    assert classify_regime(_above_200d(), 25.0, vix_panic=24.0) == Regime.PANIC
+    # v2: vix_extreme를 낮추면 같은 단발 VIX가 PANIC이 된다.
+    assert classify_regime(_above_200d(), 25.0, vix_extreme=24.0) == Regime.PANIC
+    # panic_consecutive_days를 1로 낮추면 단발 31(>30)도 D.
+    assert (
+        classify_regime(_above_200d(), 31.0, panic_consecutive_days=1) == Regime.PANIC
+    )
     # ma_period를 줄이면 짧은 데이터로도 추세 판정 가능.
     assert classify_regime(_above_200d(n=120), 15.0, ma_period=100) == Regime.NORMAL_BULL
 
@@ -110,11 +137,12 @@ def test_policy_nervous_bull_reduces_size():
     assert p.size_multiplier == 0.5
 
 
-def test_policy_bearish_blocks_entry_and_partial_exit():
+def test_policy_bearish_blocks_entry_no_forced_exit():
+    # v2: C는 강제청산 제거(0.5→0.0). 신규만 막고 기존은 개별 스탑/트레일로 관리.
     p = policy_for(Regime.BEARISH)
     assert p.allow_new_entry is False
     assert p.size_multiplier == 0.0
-    assert p.exit_fraction_on_break == 0.5
+    assert p.exit_fraction_on_break == 0.0
 
 
 def test_policy_panic_blocks_entry_and_full_exit():
