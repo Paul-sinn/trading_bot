@@ -14,8 +14,12 @@ CRITICAL (ADR-003): 어떤 모드·어떤 목표에서도 `risk_limits.max_risk_
 `SYSTEM_MAX_RISK_PCT`(상수 = 0.05)를 **절대 초과하지 못한다**. 비현실적 목표(예: 1개월 10배)라고 해서
 하드캡을 넘기지 마라 — 실거래 계좌 파산 위험. `SAFE` 모드는 더 낮은 캡(`SAFE_MAX_RISK_PCT` = 0.02)을 적용한다.
 
-> 단위 주의: 이 모듈의 `max_risk_pct`/`max_drawdown_pct`/`max_position_pct`는 **분수**(fraction)다
-> (0.05 = 5%). `sizing.position_size(max_risk_pct=...)`가 분수로 소비하는 것과 일치한다.
+> 단위 주의: `RiskLimits`의 모든 한도(`max_risk_pct`/`max_drawdown_pct`/`max_position_pct`/
+> `max_portfolio_loss_pct`)는 **분수**(fraction)다 (0.05 = 5%). `sizing.position_size`·`RiskAgent`가
+> 분수로 소비하는 것과 일치한다(단위 통일).
+> 의미 분리: `max_risk_pct`는 "1회 매매당" 리스크(sizing), `max_portfolio_loss_pct`는
+> "포트폴리오 전체" 미실현 손실 정지선(RiskAgent)으로 서로 다른 개념이다. derive_settings는
+> `max_portfolio_loss_pct = max_drawdown_pct`(계좌 단위 손실 감내치)로 둔다.
 
 ## 상수
 

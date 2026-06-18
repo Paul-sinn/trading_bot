@@ -47,14 +47,24 @@ def check_risk_gate(registry: AgentRegistry | None = None) -> tuple[bool, str]:
 
 @dataclass(frozen=True)
 class RiskLimits:
-    """리스크 한도 설정."""
+    """리스크 한도 설정.
 
-    max_risk_pct: float       # 미실현 손실 비율 한도(%)
-    max_drawdown_pct: float   # 당일 드로우다운 한도(%)
-    max_position_pct: float   # 단일 포지션 노출 한도(% of total_equity)
+    단위 통일(CRITICAL): 모든 한도는 **분수**(0.05 = 5%)다. sizing.position_size와
+    goal_planner.derive_settings가 분수로 소비/생성하는 것과 일치한다. 과거 risk 측정함수가
+    퍼센트(×100)를 쓰면서 분수 한도와 비교해 100× 어긋나던 버그를 제거했다.
+
+    의미 분리(CRITICAL): `max_risk_pct`(1회 매매당 리스크, sizing 전용)와
+    `max_portfolio_loss_pct`(포트폴리오 전체 미실현 손실 정지선, RiskAgent 전용)는
+    서로 다른 개념이므로 별도 필드다. RiskAgent.evaluate는 max_risk_pct를 쓰지 않는다.
+    """
+
+    max_risk_pct: float            # 1회 매매당 감수 리스크 (sizing 전용, 분수)
+    max_drawdown_pct: float        # 당일 드로우다운 정지선 (분수)
+    max_position_pct: float        # 단일 포지션 노출 한도 (분수, of total_equity)
+    max_portfolio_loss_pct: float  # 포트폴리오 미실현 손실 정지선 (RiskAgent 전용, 분수)
 
 
-# --- 순수 계산 함수 (부수효과 없음 — ADR-002) ---
+# --- 순수 계산 함수 (부수효과 없음 — ADR-002). 모두 분수(0.05=5%)를 반환한다. ---
 
 
 def unrealized_loss(portfolio: Portfolio) -> float:
@@ -65,20 +75,19 @@ def unrealized_loss(portfolio: Portfolio) -> float:
     )
 
 
-def current_risk_pct(portfolio: Portfolio, limits: RiskLimits) -> float:
-    """계좌 대비 현재 떠안고 있는 리스크 비율(%) = 미실현 손실 / total_equity * 100.
+def current_loss_ratio(portfolio: Portfolio) -> float:
+    """계좌 대비 현재 미실현 손실 비율(분수) = 미실현 손실 / total_equity.
 
-    `total_equity <= 0`이면 무효 계좌 상태 → `inf`(ZeroDivision 없이 안전, evaluate에서 차단).
-    `limits`는 시그니처 호환을 위해 받되 계산에는 쓰지 않는다(리스크%는 한도와 무관한 측정치).
+    분수(0.05 = 5%)로 반환한다 — RiskLimits 분수 단위와 일치. `total_equity <= 0`이면
+    무효 계좌 상태 → `inf`(ZeroDivision 없이 안전, evaluate에서 차단).
     """
-    del limits  # 객관 측정치 — 한도와 무관. 시그니처 호환 목적으로만 받는다.
     if portfolio.total_equity <= 0:
         return float("inf")
-    return unrealized_loss(portfolio) / portfolio.total_equity * 100.0
+    return unrealized_loss(portfolio) / portfolio.total_equity
 
 
-def drawdown_pct(portfolio: Portfolio) -> float:
-    """당일 피크 대비 하락률(%). day_pnl로 추정한다.
+def drawdown_ratio(portfolio: Portfolio) -> float:
+    """당일 피크(시가) 대비 하락률(분수). day_pnl로 추정한다.
 
     시작 자산 = total_equity - day_pnl(당일 손익 되돌림). day_pnl >= 0이면 0.0.
     start_equity <= 0이면 inf.
@@ -88,11 +97,11 @@ def drawdown_pct(portfolio: Portfolio) -> float:
     start_equity = portfolio.total_equity - portfolio.day_pnl
     if start_equity <= 0:
         return float("inf")
-    return (-portfolio.day_pnl) / start_equity * 100.0
+    return (-portfolio.day_pnl) / start_equity
 
 
-def max_position_pct_used(portfolio: Portfolio) -> float:
-    """가장 큰 단일 포지션의 시장가치가 total_equity에서 차지하는 비율(%).
+def position_ratio(portfolio: Portfolio) -> float:
+    """가장 큰 단일 포지션의 시장가치가 total_equity에서 차지하는 비율(분수).
 
     포지션 없음 → 0.0. total_equity <= 0 → inf.
     """
@@ -101,7 +110,7 @@ def max_position_pct_used(portfolio: Portfolio) -> float:
     if portfolio.total_equity <= 0:
         return float("inf")
     largest = max(p.quantity * p.current_price for p in portfolio.positions)
-    return largest / portfolio.total_equity * 100.0
+    return largest / portfolio.total_equity
 
 
 # --- 리스크 에이전트 (상태 루프) ---
@@ -133,17 +142,27 @@ class RiskAgent(Agent):
         if portfolio.total_equity <= 0:
             return False, "total_equity <= 0 — 무효 계좌 상태"
 
-        risk = current_risk_pct(portfolio, self.limits)
-        if risk > self.limits.max_risk_pct:
-            return False, f"미실현 손실 {risk:.2f}% > 한도 {self.limits.max_risk_pct:.2f}%"
+        # 포트폴리오 미실현 손실 정지선 (max_risk_pct(매매당)가 아니라 전용 필드 사용).
+        loss = current_loss_ratio(portfolio)
+        if loss > self.limits.max_portfolio_loss_pct:
+            return False, (
+                f"미실현 손실 {loss * 100:.2f}% > 한도 "
+                f"{self.limits.max_portfolio_loss_pct * 100:.2f}%"
+            )
 
-        dd = drawdown_pct(portfolio)
+        dd = drawdown_ratio(portfolio)
         if dd > self.limits.max_drawdown_pct:
-            return False, f"드로우다운 {dd:.2f}% > 한도 {self.limits.max_drawdown_pct:.2f}%"
+            return False, (
+                f"드로우다운 {dd * 100:.2f}% > 한도 "
+                f"{self.limits.max_drawdown_pct * 100:.2f}%"
+            )
 
-        pos = max_position_pct_used(portfolio)
+        pos = position_ratio(portfolio)
         if pos > self.limits.max_position_pct:
-            return False, f"포지션 노출 {pos:.2f}% > 한도 {self.limits.max_position_pct:.2f}%"
+            return False, (
+                f"포지션 노출 {pos * 100:.2f}% > 한도 "
+                f"{self.limits.max_position_pct * 100:.2f}%"
+            )
 
         return True, "리스크 한도 내"
 

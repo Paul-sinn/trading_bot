@@ -10,8 +10,10 @@ ADR-003 (CRITICAL): 어떤 모드·어떤 목표에서도 `risk_limits.max_risk_
 `SYSTEM_MAX_RISK_PCT`를 절대 초과하지 못한다. 비현실적 목표라고 해서 하드캡을 넘기면
 실거래 계좌 파산 위험 — 시스템의 가장 큰 위험이다.
 
-단위: max_risk_pct/max_drawdown_pct/max_position_pct는 분수(0.05 = 5%)이며
-sizing.position_size가 분수로 소비하는 것과 일치한다.
+단위: RiskLimits의 모든 한도(max_risk_pct/max_drawdown_pct/max_position_pct/
+max_portfolio_loss_pct)는 분수(0.05 = 5%)이며 sizing.position_size·RiskAgent가
+분수로 소비하는 것과 일치한다(단위 통일). max_risk_pct는 "매매당" 리스크,
+max_portfolio_loss_pct는 "포트폴리오 전체" 미실현 손실 정지선으로 의미가 다르다.
 
 spec: specs/goal_planner.md
 """
@@ -152,8 +154,13 @@ def derive_settings(
     stop_loss_atr_multiplier = _lerp(1.5, cfg.stop_cap, t)
 
     # CRITICAL(ADR-003): 매핑 후에도 한번 더 하드캡으로 clamp. 어떤 경로로도 초과 불가.
+    # max_risk_pct는 "1회 매매당" 리스크(sizing 전용)다.
     max_risk_pct = _lerp(0.005, cfg.risk_cap, t)
     max_risk_pct = min(max_risk_pct, cfg.risk_cap, SYSTEM_MAX_RISK_PCT)
+
+    # 포트폴리오 전체 미실현 손실 정지선(RiskAgent 전용). 매매당 리스크와는 다른 개념이며,
+    # 계좌 단위 손실 감내치인 드로우다운 한도를 정지선으로 쓴다(매매당 리스크보다 크다).
+    max_portfolio_loss_pct = max_drawdown_pct
 
     return GoalDerivedSettings(
         appetite=appetite,
@@ -161,6 +168,7 @@ def derive_settings(
             max_risk_pct=max_risk_pct,
             max_drawdown_pct=max_drawdown_pct,
             max_position_pct=max_position_pct,
+            max_portfolio_loss_pct=max_portfolio_loss_pct,
         ),
         stop_loss_atr_multiplier=stop_loss_atr_multiplier,
         feasibility=feas,

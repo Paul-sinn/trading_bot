@@ -79,6 +79,7 @@ def test_create_returns_goal_plan_schema(client):
         "max_risk_pct",
         "max_drawdown_pct",
         "max_position_pct",
+        "max_portfolio_loss_pct",
     }
 
 

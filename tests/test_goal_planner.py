@@ -112,6 +112,8 @@ def test_derive_settings_values_within_ranges():
     assert 0.0 < s.risk_limits.max_risk_pct <= SYSTEM_MAX_RISK_PCT
     assert 0.0 < s.risk_limits.max_drawdown_pct <= 1.0
     assert 0.0 < s.risk_limits.max_position_pct <= 1.0
+    # 포트폴리오 정지선은 매매당 리스크보다 크다(계좌 단위 감내치).
+    assert s.risk_limits.max_portfolio_loss_pct >= s.risk_limits.max_risk_pct
     assert s.stop_loss_atr_multiplier >= 1.5
 
 

@@ -1,8 +1,8 @@
 """Step 1 risk-agent 테스트 (TDD Red→Green).
 
 spec: specs/risk_agent.md
-- 순수 계산: current_risk_pct / drawdown_pct / max_position_pct_used, total_equity=0 안전.
-- evaluate: 한도 내 → (True,…), 초과 → (False,…), 경계값 허용.
+- 순수 계산: current_loss_ratio / drawdown_ratio / position_ratio(모두 분수), total_equity=0 안전.
+- evaluate: 한도 내 → (True,…), 초과 → (False,…), 경계값 허용. 한도/측정치 모두 분수.
 - CRITICAL(ADR-003): tick()이 한도 초과 시 registry.kill_all → 전 에이전트 STOPPED.
 - CRITICAL: provider 예외 시 fail-closed(kill).
 - 회귀: check_risk_gate의 RISK_KILL_SWITCH on/off 동작 보존 + registry kill 반영.
@@ -17,9 +17,9 @@ from agents.risk import (
     RiskAgent,
     RiskLimits,
     check_risk_gate,
-    current_risk_pct,
-    drawdown_pct,
-    max_position_pct_used,
+    current_loss_ratio,
+    drawdown_ratio,
+    position_ratio,
     unrealized_loss,
 )
 from backend.app.services.portfolio import Portfolio, Position
@@ -66,7 +66,13 @@ def make_portfolio(positions, cash=1000.0, day_pnl=0.0, total_equity=None):
     )
 
 
-LOOSE = RiskLimits(max_risk_pct=100.0, max_drawdown_pct=100.0, max_position_pct=100.0)
+# 모든 한도 분수. 1.0 = 100%(사실상 무제한).
+LOOSE = RiskLimits(
+    max_risk_pct=1.0,
+    max_drawdown_pct=1.0,
+    max_position_pct=1.0,
+    max_portfolio_loss_pct=1.0,
+)
 
 
 # --- 순수 계산 함수 ---
@@ -81,34 +87,34 @@ def test_unrealized_loss_only_counts_losers():
     assert unrealized_loss(p) == pytest.approx(50.0)
 
 
-def test_current_risk_pct_known_value():
-    # 손실 50, total_equity 200 → 25%
+def test_current_loss_ratio_known_value():
+    # 손실 50, total_equity 200 → 0.25 (분수)
     p = make_portfolio(
         [Position(symbol="X", quantity=10, avg_buy_price=20, current_price=15)],
         cash=50.0,
         total_equity=200.0,
     )
-    assert current_risk_pct(p, LOOSE) == pytest.approx(25.0)
+    assert current_loss_ratio(p) == pytest.approx(0.25)
 
 
-def test_current_risk_pct_zero_equity_is_safe_inf():
+def test_current_loss_ratio_zero_equity_is_safe_inf():
     p = make_portfolio([], cash=0.0, total_equity=0.0)
     # ZeroDivision 없이 inf 반환
-    assert current_risk_pct(p, LOOSE) == float("inf")
+    assert current_loss_ratio(p) == float("inf")
 
 
-def test_drawdown_pct_with_day_loss():
-    # day_pnl -100, start_equity = 900-(-100)=... 여기선 total=900, start=1000 → 10%
+def test_drawdown_ratio_with_day_loss():
+    # day_pnl -100, total=900, start=1000 → 0.10 (분수)
     p = make_portfolio([], cash=900.0, day_pnl=-100.0, total_equity=900.0)
-    assert drawdown_pct(p) == pytest.approx(10.0)
+    assert drawdown_ratio(p) == pytest.approx(0.10)
 
 
-def test_drawdown_pct_no_loss_is_zero():
+def test_drawdown_ratio_no_loss_is_zero():
     p = make_portfolio([], cash=1100.0, day_pnl=100.0, total_equity=1100.0)
-    assert drawdown_pct(p) == 0.0
+    assert drawdown_ratio(p) == 0.0
 
 
-def test_max_position_pct_used():
+def test_position_ratio():
     p = make_portfolio(
         [
             Position(symbol="A", quantity=1, avg_buy_price=10, current_price=20),  # 20
@@ -117,11 +123,11 @@ def test_max_position_pct_used():
         cash=20.0,
         total_equity=100.0,
     )
-    assert max_position_pct_used(p) == pytest.approx(60.0)
+    assert position_ratio(p) == pytest.approx(0.60)
 
 
-def test_max_position_pct_empty_is_zero():
-    assert max_position_pct_used(make_portfolio([], cash=100.0)) == 0.0
+def test_position_ratio_empty_is_zero():
+    assert position_ratio(make_portfolio([], cash=100.0)) == 0.0
 
 
 # --- evaluate ---
@@ -140,14 +146,19 @@ def test_evaluate_within_limits():
     assert isinstance(reason, str)
 
 
-def test_evaluate_blocks_on_risk_pct():
-    # 손실 50 / equity 200 = 25% > 한도 10%
+def test_evaluate_blocks_on_portfolio_loss():
+    # 손실 50 / equity 200 = 0.25 > 포트폴리오 정지선 0.10
     p = make_portfolio(
         [Position(symbol="X", quantity=10, avg_buy_price=20, current_price=15)],
         cash=50.0,
         total_equity=200.0,
     )
-    limits = RiskLimits(max_risk_pct=10.0, max_drawdown_pct=100.0, max_position_pct=100.0)
+    limits = RiskLimits(
+        max_risk_pct=0.10,  # 매매당 — evaluate는 쓰지 않음
+        max_drawdown_pct=1.0,
+        max_position_pct=1.0,
+        max_portfolio_loss_pct=0.10,
+    )
     agent = RiskAgent(AgentRegistry(), StubProvider(p), limits)
     within, reason = agent.evaluate(p)
     assert within is False
@@ -162,13 +173,18 @@ def test_evaluate_blocks_on_zero_equity():
 
 
 def test_evaluate_boundary_value_allowed():
-    # 정확히 한도와 같음 → 허용 (> 만 위반)
+    # 측정치 0.25가 정확히 한도 0.25와 같음 → 허용 (> 만 위반)
     p = make_portfolio(
         [Position(symbol="X", quantity=10, avg_buy_price=20, current_price=15)],
         cash=50.0,
         total_equity=200.0,
     )
-    limits = RiskLimits(max_risk_pct=25.0, max_drawdown_pct=100.0, max_position_pct=100.0)
+    limits = RiskLimits(
+        max_risk_pct=0.25,
+        max_drawdown_pct=1.0,
+        max_position_pct=1.0,
+        max_portfolio_loss_pct=0.25,
+    )
     agent = RiskAgent(AgentRegistry(), StubProvider(p), limits)
     within, _ = agent.evaluate(p)
     assert within is True
@@ -196,13 +212,18 @@ def test_tick_breach_kills_all_agents():
     executor.start()
     registry.register(scanner)
     registry.register(executor)
-    # 손실 50 / equity 200 = 25% > 10%
+    # 손실 50 / equity 200 = 0.25 > 정지선 0.10
     p = make_portfolio(
         [Position(symbol="X", quantity=10, avg_buy_price=20, current_price=15)],
         cash=50.0,
         total_equity=200.0,
     )
-    limits = RiskLimits(max_risk_pct=10.0, max_drawdown_pct=100.0, max_position_pct=100.0)
+    limits = RiskLimits(
+        max_risk_pct=0.10,
+        max_drawdown_pct=1.0,
+        max_position_pct=1.0,
+        max_portfolio_loss_pct=0.10,
+    )
     agent = RiskAgent(registry, StubProvider(p), limits)
     asyncio.run(agent.tick())
     assert registry.is_killed() is True
@@ -232,7 +253,12 @@ def test_tick_is_idempotent_on_repeated_breach():
         cash=50.0,
         total_equity=200.0,
     )
-    limits = RiskLimits(max_risk_pct=10.0, max_drawdown_pct=100.0, max_position_pct=100.0)
+    limits = RiskLimits(
+        max_risk_pct=0.10,
+        max_drawdown_pct=1.0,
+        max_position_pct=1.0,
+        max_portfolio_loss_pct=0.10,
+    )
     agent = RiskAgent(registry, StubProvider(p), limits)
     asyncio.run(agent.tick())
     first_reason = registry.kill_reason
