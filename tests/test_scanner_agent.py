@@ -41,15 +41,14 @@ def _make_df(prices) -> pd.DataFrame:
 
 
 def _bullish_df() -> pd.DataFrame:
-    # 장기 하락 후 마지막 2봉 소폭 반등 → RSI 과매도 + MACD 양전환 → overall BULLISH.
-    down = np.linspace(120, 80, 48)
-    up = 80 + np.arange(1, 3) * 0.5
-    return _make_df(np.concatenate([down, up]))
+    # phase5 §1 재설계: 명백한 중기 상승추세(종가>50d MA>200d MA) → trend UP → overall BULLISH.
+    # (옛 "하락 후 RSI 과매도 반등" 패러다임은 헌장 §1이 폐기 — 그건 추세 DOWN이다.)
+    return _make_df(np.linspace(80, 200, 260))
 
 
 def _bearish_df() -> pd.DataFrame:
-    # 꾸준한 상승 → RSI 과매수(BEARISH), 크로스 없음 → overall BEARISH.
-    return _make_df(np.linspace(80, 120, 50))
+    # 명백한 중기 하락추세(종가<50d MA<200d MA) → trend DOWN → overall BEARISH → 후보 제외.
+    return _make_df(np.linspace(200, 80, 260))
 
 
 WATCH = ["BULL", "BEAR"]

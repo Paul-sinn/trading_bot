@@ -19,6 +19,15 @@
       "dir": "3-goal-planner",
       "status": "completed",
       "completed_at": "2026-06-17T14:33:37+0900"
+    },
+    {
+      "dir": "4-integration",
+      "status": "pending"
+    },
+    {
+      "dir": "5-momentum-strategy",
+      "status": "completed",
+      "completed_at": "2026-06-18T00:55:00+0900"
     }
   ]
 }

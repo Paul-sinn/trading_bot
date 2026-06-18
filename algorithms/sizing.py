@@ -19,6 +19,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from algorithms.regime import Regime, policy_for
+
 
 @dataclass(frozen=True)
 class PositionPlan:
@@ -34,21 +36,73 @@ class PositionPlan:
 
 
 def kelly_fraction(
-    win_rate: float, win_loss_ratio: float, cap: float = 0.25
+    win_rate: float,
+    win_loss_ratio: float,
+    *,
+    fraction: float = 0.5,
+    cap: float = 0.25,
 ) -> float:
-    """Kelly 분수 변형. f = win_rate - (1-win_rate)/win_loss_ratio.
+    """Fractional Kelly with a hard cap.
 
-    음수면 0(베팅 안 함), cap으로 상한(풀켈리 파산 위험 방지, half-Kelly 권장).
+    f_full = win_rate - (1-win_rate)/win_loss_ratio.
+    f_used = clamp(fraction × max(0, f_full), 0, cap).
+
+    `fraction`(비례축소, 헌장 §6 MDD governor로 캘리브레이션되는 값)이 *모든* 베팅을
+    비례축소한다 — 작은 베팅도. `min(f, cap)`만으로는 fractional Kelly가 아니다(라벨버그).
+    `cap`은 절대 상한(풀켈리 파산 방지). `fraction=1.0`이면 cap-only 동작.
     win_loss_ratio<=0(분모 0/음수)은 베팅 근거 없음 → 0 (ZeroDivision 금지).
     반환값은 항상 [0, cap] 범위.
     """
     if win_loss_ratio <= 0:
         return 0.0
 
-    f = win_rate - (1.0 - win_rate) / win_loss_ratio
-    if f <= 0:
+    f_full = win_rate - (1.0 - win_rate) / win_loss_ratio
+    if f_full <= 0:
         return 0.0
-    return min(f, cap)
+    f_used = fraction * f_full
+    if f_used <= 0:
+        return 0.0
+    return min(f_used, cap)
+
+
+def effective_kelly_fraction(
+    win_rate: float,
+    win_loss_ratio: float,
+    sample_size: int,
+    *,
+    fraction: float = 0.5,
+    cap: float = 0.25,
+    prior_fraction: float = 0.0,
+    shrinkage_k: int = 30,
+) -> float:
+    """콜드스타트 shrinkage: 표본 크기로 prior → 경험적 켈리를 점진 전환한다.
+
+    w = sample_size / (sample_size + shrinkage_k).
+    f_eff = w × kelly_fraction(...) + (1-w) × prior_fraction.
+
+    거래기록 0(sample_size<=0) → w=0 → prior_fraction(기본 0.0 = 켈리 미사용, 호출부의
+    보수적 고정비율에 위임). 표본↑ → 켈리 비중 단조 증가(자동 램프업, 헌장 §7).
+    켈리 입력 출처 = 백테스트 엔진(1순위) → 실거래 로그(2순위). 백테스트 미구현 현재는
+    prior=0 콜드스타트 경로만 활성.
+    """
+    if sample_size <= 0:
+        return prior_fraction
+
+    kelly = kelly_fraction(
+        win_rate, win_loss_ratio, fraction=fraction, cap=cap
+    )
+    w = sample_size / (sample_size + shrinkage_k)
+    return w * kelly + (1.0 - w) * prior_fraction
+
+
+def regime_adjusted_fraction(kelly_f: float, regime: Regime) -> float:
+    """켈리 분수에 레짐 사이징 배수를 곱하는 별도 레이어 (헌장 §8).
+
+    = max(0, kelly_f) × policy_for(regime).size_multiplier.
+    A ×1.0 / B ×0.5 / C·D ×0.0 → C/D는 신규 진입 없음. 켈리 함수는 순수 유지하고
+    배수는 이 레이어에서만 곱한다. 배수(≤1.0)는 ADR-003 하드캡을 *올리지* 못한다.
+    """
+    return max(0.0, kelly_f) * policy_for(regime).size_multiplier
 
 
 # --- 스탑로스 (순수) ---

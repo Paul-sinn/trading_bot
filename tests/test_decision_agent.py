@@ -24,14 +24,21 @@ from agents.decision import (
     MockDecisionProvider,
 )
 from agents.scanner import Candidate
-from algorithms.signals import Signal, SignalResult
+from algorithms.signals import Signal, SignalResult, TrendState
 
 
 # --- 결정론적 Candidate 헬퍼 ---
 
+_OVERALL_TO_TREND = {
+    Signal.BULLISH: TrendState.UP,
+    Signal.BEARISH: TrendState.DOWN,
+    Signal.NEUTRAL: TrendState.NEUTRAL,
+}
+
 
 def _signal(overall: Signal) -> SignalResult:
-    return SignalResult(ema=overall, rsi=overall, macd=overall, overall=overall)
+    # phase5 step0 재설계: SignalResult는 trend 기반. decision agent는 .overall만 읽는다.
+    return SignalResult(trend=_OVERALL_TO_TREND[overall], overall=overall)
 
 
 def _candidate(symbol: str, overall: Signal, filters_passed: bool) -> Candidate:

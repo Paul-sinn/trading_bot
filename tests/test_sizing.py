@@ -1,49 +1,63 @@
-"""Step 7 sizing (Layer 3) 테스트 (TDD Red→Green).
+"""Phase 5 step2 sizing (Layer 3) 테스트 (TDD Red→Green).
 
-spec: specs/sizing.md
-- Kelly Criterion 변형 / ATR 스탑로스 / 투자성향 가중 / 리스크 한도 기반 수량.
-- CRITICAL(ADR-003): position_size의 risk_amount는 account_equity*max_risk_pct를 절대 초과하지 않는다.
-- 엣지케이스: 분모 0(win_loss_ratio=0, entry==stop), equity 부족, kelly_f 0.
+spec: specs/sizing.md  ·  상세: tasks/kelly-fix-prompt.md  ·  헌장: §6/§7/§8
+- fractional Kelly(fraction×f_full, cap) — min(f,cap) 라벨버그 수정.
+- effective_kelly_fraction: 콜드스타트 shrinkage(표본↑ → 켈리).
+- regime_adjusted_fraction: 레짐 배수 별도 레이어(C/D=0).
+- CRITICAL(ADR-003): position_size risk_amount ≤ equity*max_risk_pct (레짐배수 적용 후에도).
 """
 
 import math
 
 import pytest
 
+from algorithms.regime import Regime
 from algorithms.sizing import (
     PositionPlan,
+    effective_kelly_fraction,
     kelly_fraction,
     position_size,
+    regime_adjusted_fraction,
     risk_appetite_weight,
     stop_loss_price,
 )
 
 
-# --- Kelly Criterion ---
+# --- fractional Kelly (문제 1: min(f,cap) 라벨버그 수정) ---
 
 
-def test_kelly_known_value_capped():
-    # win_rate=0.6, ratio=2 → f = 0.6 - 0.4/2 = 0.4 → cap 0.25 적용.
-    assert kelly_fraction(0.6, 2.0) == pytest.approx(0.25)
+def test_kelly_fractional_scales_full_kelly():
+    # full Kelly 0.40 → fraction 0.5 → 0.20 (cap 0.25 미만이어도 비례축소).
+    assert kelly_fraction(0.6, 2.0) == pytest.approx(0.20)
 
 
-def test_kelly_below_cap_uncapped():
-    # win_rate=0.5, ratio=1 → f = 0.5 - 0.5/1 = 0.0.
+def test_kelly_fractional_small_bet_also_scaled():
+    # full 0.10 → 0.05. 옛 버그(min(f,cap))는 0.10을 그대로 뒀다.
+    assert kelly_fraction(0.4, 2.0) == pytest.approx(0.05)
+
+
+def test_kelly_fractional_tiny_bet_also_scaled():
+    # full 0.04 → 0.02.
+    assert kelly_fraction(0.52, 1.0) == pytest.approx(0.02)
+
+
+def test_kelly_fraction_one_is_cap_only():
+    # fraction=1.0 → cap-only 동작. full 0.40, cap 0.25 → 0.25.
+    assert kelly_fraction(0.6, 2.0, fraction=1.0, cap=0.25) == pytest.approx(0.25)
+    # full 0.325 < cap 1.0, fraction 1.0 → 0.325.
+    assert kelly_fraction(0.55, 2.0, fraction=1.0, cap=1.0) == pytest.approx(0.325)
+
+
+def test_kelly_zero_full_is_zero():
+    # win_rate=0.5, ratio=1 → f_full = 0.0 → 0.
     assert kelly_fraction(0.5, 1.0) == pytest.approx(0.0)
 
 
-def test_kelly_positive_below_cap():
-    # win_rate=0.55, ratio=2, cap 높게 → f = 0.55 - 0.45/2 = 0.325.
-    assert kelly_fraction(0.55, 2.0, cap=1.0) == pytest.approx(0.325)
-
-
 def test_kelly_negative_clamped_to_zero():
-    # 낮은 승률 → 음수 → 0.
     assert kelly_fraction(0.2, 1.0) == 0.0
 
 
 def test_kelly_win_loss_ratio_zero_is_safe():
-    # 분모 0 → ZeroDivision 금지, 0 반환.
     assert kelly_fraction(0.6, 0.0) == 0.0
 
 
@@ -52,14 +66,88 @@ def test_kelly_negative_ratio_is_safe():
 
 
 def test_kelly_win_rate_one_capped():
+    # f_full=1.0 → fraction 0.5 → 0.5 → cap 0.25.
     assert kelly_fraction(1.0, 2.0) == pytest.approx(0.25)
 
 
 def test_kelly_never_exceeds_cap():
     for wr in (0.0, 0.3, 0.6, 0.9, 1.0):
         for ratio in (0.5, 1.0, 3.0, 10.0):
-            f = kelly_fraction(wr, ratio)
-            assert 0.0 <= f <= 0.25
+            for frac in (0.25, 0.5, 1.0):
+                f = kelly_fraction(wr, ratio, fraction=frac)
+                assert 0.0 <= f <= 0.25
+
+
+# --- effective_kelly_fraction (문제 2: 콜드스타트 shrinkage) ---
+
+
+def test_effective_kelly_no_history_returns_prior():
+    # sample_size=0 → w=0 → prior_fraction(기본 0.0). 콜드스타트 켈리 미사용.
+    assert effective_kelly_fraction(0.6, 2.0, 0) == pytest.approx(0.0)
+
+
+def test_effective_kelly_no_history_custom_prior():
+    assert effective_kelly_fraction(0.6, 2.0, 0, prior_fraction=0.1) == pytest.approx(0.1)
+
+
+def test_effective_kelly_large_sample_approaches_kelly():
+    kelly = kelly_fraction(0.6, 2.0)  # 0.20
+    eff = effective_kelly_fraction(0.6, 2.0, 100_000)
+    assert eff == pytest.approx(kelly, abs=1e-3)
+
+
+def test_effective_kelly_monotonic_in_sample_size():
+    prev = -1.0
+    for n in (0, 10, 30, 100, 1000):
+        eff = effective_kelly_fraction(0.6, 2.0, n, prior_fraction=0.0)
+        assert eff >= prev  # prior 0 < kelly 0.20 → 표본↑ → 단조 증가.
+        prev = eff
+
+
+def test_effective_kelly_within_cap():
+    for n in (0, 1, 30, 500):
+        eff = effective_kelly_fraction(0.9, 5.0, n, prior_fraction=0.2)
+        assert 0.0 <= eff <= 0.25
+
+
+def test_effective_kelly_shrinkage_midpoint():
+    # n=k=30 → w=0.5 → 0.5*kelly + 0.5*prior.
+    kelly = kelly_fraction(0.6, 2.0)  # 0.20
+    eff = effective_kelly_fraction(0.6, 2.0, 30, prior_fraction=0.0, shrinkage_k=30)
+    assert eff == pytest.approx(0.5 * kelly)
+
+
+# --- regime_adjusted_fraction (문제 3: 레짐 배수 별도 레이어) ---
+
+
+def test_regime_normal_bull_keeps_full_fraction():
+    assert regime_adjusted_fraction(0.20, Regime.NORMAL_BULL) == pytest.approx(0.20)
+
+
+def test_regime_nervous_bull_halves_fraction():
+    assert regime_adjusted_fraction(0.20, Regime.NERVOUS_BULL) == pytest.approx(0.10)
+
+
+def test_regime_bearish_and_panic_zero_fraction():
+    assert regime_adjusted_fraction(0.20, Regime.BEARISH) == 0.0
+    assert regime_adjusted_fraction(0.20, Regime.PANIC) == 0.0
+
+
+def test_regime_cd_means_no_entry_via_position_size():
+    # 레짐 C/D → 배수 0 → kelly_f 0 → position_size quantity 0 (진입 없음).
+    for regime in (Regime.BEARISH, Regime.PANIC):
+        kf = regime_adjusted_fraction(0.25, regime)
+        p = position_size(100000, 100, 95, 0.02, kf, 1.0)
+        assert p.quantity == 0
+
+
+def test_regime_multiplier_never_exceeds_hard_cap():
+    # ADR-003: 레짐배수 적용 후에도 risk_amount ≤ allowed. 배수가 캡을 올리지 못한다.
+    for regime in (Regime.NORMAL_BULL, Regime.NERVOUS_BULL, Regime.BEARISH, Regime.PANIC):
+        for kelly_in in (0.1, 0.25, 1.0):
+            kf = regime_adjusted_fraction(kelly_in, regime)
+            p = position_size(100000, 100, 95, 0.02, kf, 1.5)
+            assert p.risk_amount <= 100000 * 0.02 + 1e-6
 
 
 # --- 스탑로스 ---

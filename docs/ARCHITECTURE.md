@@ -20,24 +20,26 @@ trading-bot/
 ├── agents/                # 서브에이전트 6개 (Python)
 │   ├── base.py            # 공통 에이전트 인터페이스 + 라이프사이클
 │   ├── scanner.py         # 스캐너 에이전트
-│   ├── decision.py        # 판단 에이전트 (Claude API)
+│   ├── decision.py        # 판단 에이전트 (LLM / OpenAI API)
 │   ├── executor.py        # 실행 에이전트 (Robinhood MCP)
 │   ├── risk.py            # 리스크 에이전트 (kill-switch)
 │   ├── reporter.py        # 리포트 에이전트
 │   └── notifier.py        # 알림 에이전트 (슬랙/SMS)
-├── algorithms/            # 시그널/필터/사이징 (Python + TA-lib + Pandas)
-│   ├── signals.py         # Layer 1: EMA/RSI/MACD
+├── algorithms/            # 시그널/필터/사이징 (Python + Pandas/NumPy, TA-lib 미사용)
+│   ├── signals.py         # Layer 1: EMA/RSI/MACD (pandas/numpy 직접 계산)
 │   ├── filters.py         # Layer 2: 거래량/ATR/센티먼트/VIX
-│   └── sizing.py          # Layer 3: Kelly + 스탑로스 + 성향 가중치
+│   ├── sizing.py          # Layer 3: fractional Kelly + 하드캡 + 스탑로스 + 성향 가중치
+│   ├── goal_planner.py    # 목표금액·기간 → 리스크/성향 세팅 역산
+│   └── backtest.py        # (계획됨) 과거 데이터 재생 → 승률/손익비/MDD 산출
 ├── specs/                 # 기능별 SDD 스펙 문서 (기능명.md)
 ├── tests/                 # 기능별 TDD 테스트 (test_기능명.py)
 ├── docs/                  # PRD / ARCHITECTURE / ADR / UI_GUIDE
-├── .claude/               # Claude Code hooks (PreToolUse / PostToolUse)
-└── .env                   # 시크릿 (Robinhood, Claude API 키 등) — git 제외
+├── .claude/               # Claude Code hooks (PreToolUse / PostToolUse) — 개발 툴(Claude Code), 봇 LLM과 무관
+└── .env                   # 시크릿 (Robinhood, OpenAI API 키 등) — git 제외
 ```
 
 ## 패턴
-- **백엔드가 단일 진실 공급원(SSOT)**: 모든 외부 API(Robinhood MCP, Claude)·DB 접근은 backend에서만. frontend는 backend REST/WS만 호출한다.
+- **백엔드가 단일 진실 공급원(SSOT)**: 모든 외부 API(Robinhood MCP, OpenAI)·DB 접근은 backend에서만. frontend는 backend REST/WS만 호출한다.
 - **에이전트 = 독립 루프**: 각 에이전트는 `base.Agent` 인터페이스(`start/stop/tick`)를 구현하고 자기 주기로 실행. 리스크 에이전트가 다른 에이전트의 kill-switch를 보유.
 - **알고리즘 = 순수 함수**: `algorithms/`는 입력(가격 DataFrame, 설정)→출력(시그널/사이즈)인 부수효과 없는 순수 함수. 테스트 용이성 최우선.
 - **프론트엔드**: Server Components 기본, 실시간/인터랙션 영역(티커, 토글, 슬라이더)만 Client Component.
@@ -46,7 +48,7 @@ trading-bot/
 ```
 [자동매매 루프]
 스캐너(1분) → 시그널 후보 → 알고리즘 3레이어(signals→filters→sizing)
-  → 통과 종목 → 판단 에이전트(Claude) → 매수/홀드/매도
+  → 통과 종목 → 판단 에이전트(LLM/OpenAI) → 매수/홀드/매도
   → [PreToolUse hook: 리스크 에이전트 체크] → 실행 에이전트(MCP 주문)
   → 체결 → DB 저장 → WebSocket push → UI
 
@@ -54,14 +56,14 @@ trading-bot/
 Robinhood MCP → backend(Redis 캐시) → WebSocket → frontend (1초 갱신)
 
 [리스크 차단]
-리스크 에이전트(실시간 리스크% 계산) → 한도 초과 → kill-switch(전 에이전트 정지)
+리스크 에이전트(실시간 포트폴리오 손실 한도 계산) → 한도 초과 → kill-switch(전 에이전트 정지)
   → 알림 에이전트(슬랙/SMS)
 
 [수동 거래]
 UI 티커 검색 → 수량 입력 → backend REST → [리스크 체크] → MCP 주문 → 체결 → UI
 
 [AI 시황 — 매일 9시]
-스케줄러 → 판단 에이전트(Claude 시황 요약 + 7일 방향성) → DB → UI 카드
+스케줄러 → 판단 에이전트(LLM/OpenAI 시황 요약 + 7일 방향성) → DB → UI 카드
 ```
 
 ## 상태 관리

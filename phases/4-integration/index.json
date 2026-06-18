@@ -1,0 +1,12 @@
+{
+  "project": "Custom Trading Bot",
+  "phase": "4-integration",
+  "steps": [
+    { "step": 0, "name": "openai-client", "status": "pending" },
+    { "step": 1, "name": "llm-providers-core", "status": "pending" },
+    { "step": 2, "name": "llm-providers-aux", "status": "pending" },
+    { "step": 3, "name": "goals-page-restructure", "status": "pending" },
+    { "step": 4, "name": "apply-settings-wiring", "status": "pending" },
+    { "step": 5, "name": "e2e-integration", "status": "pending" }
+  ]
+}
