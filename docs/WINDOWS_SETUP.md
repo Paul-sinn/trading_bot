@@ -73,7 +73,7 @@ python scripts\run_oos.py --root data\survivorship_free
 - [ ] clone + venv + `pytest -q` 367 통과 확인
 - [ ] (재검증) Norgate NDU 설치·구독 또는 CSV export 준비 → `data/survivorship_free/`
 - [ ] `scripts\run_oos.py` 실행 → 약세장 포함 결과 확인
-- [ ] **사람 판정(헌장 §10)**: 편향 제거·약세장 後에도 QQQ를 위험조정으로 이기는가? → 통과 시 페이퍼 → 소액 라이브
+- [ ] **사람 판정(헌장 §10)**: 편향 제거·약세장 後에도 QQQ를 위험조정으로 이기는가? → 통과 시 **소액 라이브**(페이퍼 단계는 생략 — 헌장 §10 ③, 2026-06 결정)
 
 ## 주의 (변하지 않는 원칙)
 
