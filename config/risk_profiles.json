@@ -1,0 +1,98 @@
+{
+  "_meta": {
+    "kind": "DRAFT — config-only, NOT wired into strategy/execution code",
+    "source_of_truth": "docs/overnight_constitution_and_universe_audit.md",
+    "also_see": ["docs/UNIVERSE_TIERS.md (§3 Concentration, §4 Risk Modes, §5 Tier5, §6 RiskGate)", "docs/STRATEGY.md §6"],
+    "disclaimer": "universe audit / policy draft, not a live greenlight. No order/broker code uses this file yet. 값 튜닝 금지(이번 단계).",
+    "fractions_note": "퍼센트는 분수로 표기(0.07 = 7%). account_loss = position_weight * stop_loss_pct."
+  },
+  "risk_modes": {
+    "B": {
+      "default": true,
+      "label": "기본 aggressive swing",
+      "max_account_loss_pct_per_trade": 0.07,
+      "allowed_tiers": ["0", "1", "2", "3", "4A", "4B"],
+      "tier_notes": {
+        "4B": "position cap 50~70% 유지",
+        "5": "집중 금지(small only) — B에서도 Tier5는 전용 프로파일"
+      }
+    },
+    "C": {
+      "default": false,
+      "label": "예외적 aggressive",
+      "max_account_loss_pct_per_trade": 0.10,
+      "allowed_tiers": ["0", "1", "2"],
+      "tier2_whitelist_only": true,
+      "forbidden_tiers": ["3", "4A", "4B", "5"],
+      "preconditions_all_required": [
+        "market regime risk-on 또는 strong-neutral",
+        "재진입(re-entry) 거래 아님",
+        "최근 연속손실(losing streak) 상태 아님",
+        "stop_loss/liquidity/spread/relative_strength/trend/volume_expansion 전부 통과"
+      ]
+    }
+  },
+  "c_mode_tier2_whitelist": ["PLTR", "COIN", "HOOD", "VRT", "CRWD", "ARM", "MU"],
+  "c_mode_tier2_whitelist_removed": [
+    {"symbol": "SMCI", "reason": "ATR 11.2% 극단 + 2024 회계/상폐 리스크(감사 needs_review)"}
+  ],
+  "tier2_b_mode_only": ["NET", "DDOG", "HIMS", "SNOW", "MDB", "TSM", "ASML"],
+  "concentration_phases": {
+    "1": {"account_usd": [1000, 3000], "mode": "concentrated", "deploy_caps_pct": {"tier_0_2": [80, 100], "tier_3": [70, 90], "tier_4A": [60, 80], "tier_4B": [50, 70], "tier_5": "small_only", "tier_6": "conservative_per_tier_2_or_5"}},
+    "2": {"account_usd": [3000, 5000], "positions": [1, 2], "main_pct": [60, 80], "secondary_pct": [20, 40]},
+    "3": {"account_usd": [5000, 10000], "positions": [2, 3], "main_pct": [40, 60], "secondary_pct": [20, 30]},
+    "4": {"account_usd": [10000, null], "mode": "portfolio", "positions": [3, 5], "note": "Tier 5 speculative sleeve 별도 제한"}
+  },
+  "tier5_profile": {
+    "applies_to_tier": "5",
+    "rules": [
+      "small position only",
+      "no concentration mode",
+      "no C mode",
+      "no averaging down",
+      "entry requires stronger confirmation",
+      "wider ATR-based stop allowed",
+      "smaller position size required",
+      "trailing stop starts later",
+      "partial profit-taking allowed after strong move",
+      "total Tier 5 exposure cap required"
+    ],
+    "total_tier5_exposure_cap_pct": "data_missing — needs_review (수치 미정)"
+  },
+  "portfolio_guards": {
+    "mdd_hard_stop_pct": 0.20,
+    "mdd_design_target_pct": [0.12, 0.15],
+    "daily_loss_limit_pct": "data_missing",
+    "weekly_loss_limit_pct": "data_missing",
+    "consecutive_loss_limit_count": "data_missing",
+    "note": "MDD 하드차단·예산은 헌장 §6 확정값. daily/weekly/consecutive 수치는 소스 미명시 → needs_review."
+  },
+  "riskgate_hard_veto_conditions": [
+    "stop_loss 없음",
+    "position_size 계산 실패",
+    "liquidity/spread 기준 실패",
+    "market regime risk-off",
+    "sector/tier exposure 과다",
+    "daily_loss_limit 초과",
+    "weekly_loss_limit 초과",
+    "consecutive_loss_limit 초과",
+    "데이터 결측/이상치",
+    "IPO/신규상장 데이터 부족 + 특례 없음",
+    "earnings/FOMC/CPI/고임팩트 이벤트 리스크 미확인",
+    "AI/news/SNS만 있고 technical confirmation 없음"
+  ],
+  "reentry_rule": {
+    "same_day_after_stop": "기본 금지",
+    "exception": "명확한 재돌파/재확인 시 1회만",
+    "reentry_size": "첫 진입보다 작게",
+    "c_mode_on_reentry": "금지",
+    "on_reentry_fail": "그날 거래 중단",
+    "forbidden": ["revenge trading", "recovery trading"]
+  },
+  "todos": [
+    "daily/weekly/consecutive loss limit 수치 확정(현재 data_missing)",
+    "tier5 total exposure cap 수치 확정",
+    "소액 라이브 하드캡(헌장 §10 [확정 필요]) 확정",
+    "검증 게이트 임계 수치 최종화(헌장 §12) — 편향 없는 검증 단계에서"
+  ]
+}
