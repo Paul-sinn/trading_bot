@@ -48,3 +48,63 @@ pytest tests/test_기능명.py             # 단일 기능 테스트
   - 원인: dev와 build가 같은 `.next`를 공유. build가 dev 빌드 산출물을 클로버.
   - 복구: `pkill -f "next dev"` → `rm -rf frontend/.next` → `npm run dev` 재시작.
   - 예방: 검증 빌드는 dev 서버를 끄고 하거나, dev 서버는 그대로 두고 빌드 검증은 CI/별도 클린 체크아웃에서 한다. dev 중 build가 필요하면 `.next` 충돌을 인지하고 끝나면 dev 재시작.
+윈도우에서 이어가는 법 (요약)
+
+  핵심: 모든 작업물이 GitHub에 있으니 clone만 하면 그대로 이어집니다. Norgate가 윈도우
+  전용이라 오히려 윈도우가 맞아요.
+
+  1. 윈도우에 설치
+
+  - Git for Windows(Git Bash 포함 — 훅이 bash라 필요), Python 3.11+(PATH 체크), Claude
+  Code(세션 이어가려면)
+  
+  2. clone + 환경 (PowerShell)
+
+  git clone https://github.com/Paul-sinn/trading_bot.git
+  cd trading_bot
+  python -m venv .venv
+  .\.venv\Scripts\Activate.ps1
+  pip install -r requirements.txt
+  python -m pytest -q          # 367 통과 확인 = 이어가기 OK
+
+  ⚠️  Mac ↔ 윈도우 차이 딱 3개
+
+  ┌────────────┬─────────────────────────────┬───────────────────────────────────┐
+  │            │             Mac             │              윈도우               │
+  ├────────────┼─────────────────────────────┼───────────────────────────────────┤
+  │ 파이썬     │ .venv/bin/python            │ .venv\Scripts\python              │
+  │ 경로       │                             │                                   │
+  ├────────────┼─────────────────────────────┼───────────────────────────────────┤
+  │ 스크립트   │ PYTHONPATH=.                │ $env:PYTHONPATH="."; python       │
+  │ 실행       │ .venv/bin/python ...        │ scripts\run_oos.py ...            │
+  ├────────────┼─────────────────────────────┼───────────────────────────────────┤
+  │ 훅 설치    │ bash                        │ Git Bash에서 동일 (훅은 윈도우    │
+  │            │ scripts/install-hooks.sh    │ 경로 인식하게 고쳐둠)             │
+  └────────────┴─────────────────────────────┴───────────────────────────────────┘
+
+  3. Norgate 설정
+
+  1. Norgate 구독 + NDU(Norgate Data Updater) 윈도우 앱 설치 → 백그라운드 데이터 엔진
+  실행
+  2. pip install norgatedata
+  3. 두 갈래:
+    - CSV 드롭인(쉬움, 추천): NDU에서 상폐종목 포함 export → data/survivorship_free/에
+  두고 python scripts\run_oos.py --root data\survivorship_free (이 폴더는 gitignore됨
+  — 라이선스상 커밋 금지)
+    - SDK 실연동: agents/data_adapter.py의 NorgateProvider 스켈레톤 채우기(지연 import
+  구조 준비됨) — 윈도우에서 같이 하면 됩니다
+
+  4. Claude Code로 이 작업 이어가기
+
+  윈도우에서 clone한 폴더에서 Claude Code 실행하면 됩니다. 이 대화 자체는 안 
+  따라가지만, 모든 맥락이 코드에 박혀 있어요:
+  - phases/5-momentum-strategy/index.json — step0~11 전체 진행 기록(각 step summary
+  포함)
+  - docs/STRATEGY.md(헌장) + docs/ADR.md + phases/.../step*.md — 결정·설계 전부
+  - 윈도우에서 "step11 이어서 Norgate 실연동하자"처럼 말하면 index.json·step11.md 보고
+  바로 이어갑니다
+
+  전체 절차는 docs/WINDOWS_SETUP.md에 체크리스트로 정리해뒀습니다.
+
+  준비되면 윈도우에서 데이터 꽂고 run_oos.py 돌린 결과를 같이 분석하시죠. 막히는
+  부분(Norgate export 형식 등) 있으면 물어보세요.
