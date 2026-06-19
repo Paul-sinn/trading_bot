@@ -55,3 +55,31 @@ def get_vix(self, start: str | None = None, end: str | None = None) -> pd.Series
 ## 비범위
 - 1시간봉(v2), 실시간 스트리밍, Robinhood 주문/실행(executor), 캐싱 영속화(선택, 메모리 캐시까지만).
 - 이상치/스파이크 필터링(호출자/리서치 단계). algorithms 순수성 침범 금지.
+
+## step11 실연동: `NorgateProvider` (생존편향 없는 point-in-time, SDK 실연동)
+
+헌장 §3 "라이브 전 필수: 생존편향 없는 벤더(Norgate급 — 상폐종목 + 시점별 지수편입)로 재검증". `norgatedata`
+파이썬 패키지(로컬 NDU 데이터 엔진 접속, 윈도우 전용)를 **지연 import**해 `PointInTimeProvider`를 실구현한다.
+미설치/미구독 시 명확한 ImportError 안내. **테스트는 fake SDK 주입(`_sdk()` monkeypatch) — 실 NDU/네트워크 0.**
+
+### Norgate API 매핑 (norgatedata 1.0.74 실측)
+- `price_timeseries(symbol, stock_price_adjustment_setting=TOTALRETURN, start_date, end_date, format="pandas-dataframe")`
+  → 컬럼 `Open/High/Low/Close/Volume/Turnover/Unadjusted Close/Dividend`, index=`Date`. TOTALRETURN조정 → `Close`가 수정주가.
+  `get_ohlcv`는 이 raw를 `normalize_ohlcv`로 흡수("adj close" 없음 → 조정된 "close" 채택).
+- `$VIX` 등 지수는 volume이 무의미 → `get_vix`는 `Close`만 뽑아 Series 반환(normalize 안 거침).
+- `watchlist_symbols("S&P 500 Current & Past")` → 상폐 포함 후보 풀(생존편향 제거). `watchlists()`로 목록.
+- `first_quoted_date(symbol)`→`listed_from`(ISO). `last_quoted_date(symbol)`→ active면 `None`(=`delisted_at None`), 상폐면 상폐일.
+- `security_name(symbol)` → 레버리지/인버스 이름 휴리스틱 입력(`2X/3X/Bull/Bear/Ultra/Inverse/Short/Leveraged`).
+
+### 메트릭 산출 (`get_metrics(as_of)`)
+후보 풀(워치리스트 + `extra_symbols` 섹터 ETF) 각 심볼에 대해 as_of까지의 가격이력으로:
+- `avg_dollar_volume`: 최근 `lookback_days`(기본 63) `Turnover` 평균(=실거래 달러액).
+- `atr_pct`: `algorithms.filters._atr`(Wilder, 전략 전체와 동일 정의 재사용) ÷ 마지막 close.
+- `is_leveraged_or_inverse`: security_name 토큰 휴리스틱.
+선정은 `get_constituents = select_universe(get_metrics(as_of), as_of, min_dollar_volume, atr_pct_band)`(순수, ADR-002).
+
+### 결정/주의
+- 기본 워치리스트 `S&P 500 Current & Past`(유동·상폐 포함), `universe_watchlist`/`extra_symbols`로 설정 가능. 섹터 ETF(SMH/XLE/XLF)는 지수 멤버 아님 → `extra_symbols`로 추가.
+- `survivorship_biased = False`(상폐 포함). 가격조정 기본 `TOTALRETURN`(설정 가능).
+- 무료체험은 히스토리 2년 제한 → 약세장(2018/2022) 풀 재검증은 정식 구독 후. 코드 경로는 동일.
+- ⚠️ 비용: get_metrics는 후보 풀 심볼마다 가격이력 1회 조회(연구용 수동 런 — CI 아님). 심볼별 메모리 캐시로 중복 조회 억제.

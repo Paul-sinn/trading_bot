@@ -16,6 +16,7 @@ from typing import Callable, Protocol, runtime_checkable
 
 import pandas as pd
 
+from algorithms.filters import _atr  # 전략 전체와 동일한 ATR(Wilder) 정의 재사용 (step11 메트릭)
 from algorithms.universe import SymbolMetrics, select_universe
 
 SURVIVORSHIP_WARNING = (
@@ -305,45 +306,148 @@ class CsvPointInTimeProvider:
 
 
 class NorgateProvider:
-    """Norgate Data SDK 기반 point-in-time provider (지연 import 스켈레톤).
+    """Norgate Data SDK 기반 point-in-time provider (실연동 — 상폐 포함, 생존편향 없음).
 
-    Norgate는 유료 구독 + 로컬 설치가 필요하다. norgatedata 패키지를 지연 import하며, 미설치/미구독 시
-    명확한 안내 예외를 던진다(실호출 안 함). 실연동은 환경 구성 후 통합 phase에서 채운다.
+    `norgatedata` 패키지(로컬 NDU 엔진 접속, 윈도우 전용)를 **지연 import**한다. 미설치/미구독 시 명확한
+    안내 예외. 가격은 기본 TOTALRETURN 조정(설정 가능). 후보 풀은 상폐 포함 워치리스트(예: 'S&P 500
+    Current & Past') + 섹터 ETF(extra_symbols). 메트릭(유동성·ATR·레버리지)을 산출해 select_universe(순수,
+    ADR-002)로 point-in-time 선정한다. 매핑·결정은 specs/data_adapter.md(step11) 참조.
+
+    ⚠️ 비용: get_metrics는 후보 심볼마다 가격이력 1회 조회(연구용 수동 런 — CI 아님). 심볼별 메모리 캐시로
+    중복 조회를 억제한다(프로세스 수명 동안).
     """
 
     survivorship_biased: bool = False  # Norgate는 상폐종목 포함 → 생존편향 없음
 
-    def __init__(self, *, watchlist: str = "US Equities") -> None:
-        self._watchlist = watchlist
+    # 레버리지/인버스 이름 휴리스틱(헌장 §3 제외 대상). 대문자 비교.
+    _LEVERAGED_TOKENS: tuple[str, ...] = (
+        "2X", "3X", "-1X", "ULTRA", "ULTRAPRO", "INVERSE", "BULL", "BEAR",
+        "SHORT", "LEVERAGED", "DAILY",
+    )
+
+    def __init__(
+        self,
+        *,
+        universe_watchlist: str = "S&P 500 Current & Past",
+        extra_symbols: tuple[str, ...] = (),
+        vix_symbol: str = "$VIX",
+        adjustment: str = "TOTALRETURN",
+        lookback_days: int = 63,
+        min_dollar_volume: float = 1e7,
+        atr_pct_band: tuple[float, float] = (0.015, 0.05),
+        atr_period: int = 14,
+    ) -> None:
+        self._universe_watchlist = universe_watchlist
+        self._extra_symbols = tuple(extra_symbols)
+        self._vix_symbol = vix_symbol
+        self._adjustment = adjustment
+        self._lookback_days = lookback_days
+        self._min_dollar_volume = min_dollar_volume
+        self._atr_pct_band = atr_pct_band
+        self._atr_period = atr_period
+        self._price_cache: dict[str, pd.DataFrame] = {}
 
     def _sdk(self):
         try:
             import norgatedata  # 지연 import: 미설치 환경에서 모듈 전체가 죽지 않게.
         except ImportError as exc:  # pragma: no cover - 환경 의존
             raise ImportError(
-                "norgatedata 미설치/미구독. Norgate Data 구독+설치 후 사용하거나 "
-                "CsvPointInTimeProvider로 export 파일을 꽂아라."
+                "norgatedata 미설치/미구독. Norgate Data 구독+NDU 설치(윈도우) 후 "
+                "`pip install norgatedata` 하거나 CsvPointInTimeProvider로 export 파일을 꽂아라."
             ) from exc
         return norgatedata
 
-    def get_metrics(self, as_of: str) -> dict[str, SymbolMetrics]:  # pragma: no cover
-        self._sdk()
-        raise NotImplementedError(
-            "Norgate 실연동은 통합 phase에서 구현한다(구독·설치 필요). 현재는 스켈레톤."
-        )
-
-    def get_constituents(self, as_of: str) -> list[str]:  # pragma: no cover
-        self._sdk()
-        raise NotImplementedError("Norgate 실연동은 통합 phase에서 구현한다.")
-
-    def get_ohlcv(  # pragma: no cover
+    def _raw_prices(
         self, symbol: str, start: str | None = None, end: str | None = None
     ) -> pd.DataFrame:
-        self._sdk()
-        raise NotImplementedError("Norgate 실연동은 통합 phase에서 구현한다.")
+        """Norgate price_timeseries 원시 df(컬럼 그대로). 전체이력은 심볼별 캐시."""
+        if symbol not in self._price_cache:
+            ng = self._sdk()
+            adj = getattr(ng.StockPriceAdjustmentType, self._adjustment)
+            df = ng.price_timeseries(
+                symbol,
+                stock_price_adjustment_setting=adj,
+                start_date="1800-01-01",
+                end_date="2999-01-01",
+                format="pandas-dataframe",
+            )
+            self._price_cache[symbol] = df if df is not None else pd.DataFrame()
+        df = self._price_cache[symbol]
+        if start is not None:
+            df = df[df.index >= pd.Timestamp(start)]
+        if end is not None:
+            df = df[df.index <= pd.Timestamp(end)]
+        return df
 
-    def get_vix(  # pragma: no cover
+    def get_ohlcv(
+        self, symbol: str, start: str | None = None, end: str | None = None
+    ) -> pd.DataFrame:
+        return normalize_ohlcv(self._raw_prices(symbol, start, end))
+
+    def get_vix(
         self, start: str | None = None, end: str | None = None
     ) -> pd.Series:
-        self._sdk()
-        raise NotImplementedError("Norgate 실연동은 통합 phase에서 구현한다.")
+        # 지수는 volume이 무의미 → normalize 거치지 않고 close만 추출.
+        raw = self._raw_prices(self._vix_symbol, start, end)
+        lowered = {str(c).strip().lower(): c for c in raw.columns}
+        if "close" not in lowered:
+            raise KeyError(f"VIX close 컬럼 누락 (있는 컬럼: {list(raw.columns)})")
+        return raw[lowered["close"]].astype("float64").sort_index()
+
+    def _candidate_symbols(self) -> list[str]:
+        ng = self._sdk()
+        syms = list(ng.watchlist_symbols(self._universe_watchlist) or [])
+        for s in self._extra_symbols:  # 섹터 ETF 등 — 지수 멤버 아님
+            if s not in syms:
+                syms.append(s)
+        return syms
+
+    def _is_leveraged(self, name: str) -> bool:
+        upper = (name or "").upper()
+        return any(tok in upper for tok in self._LEVERAGED_TOKENS)
+
+    def _metrics_for(self, symbol: str, as_of: str) -> SymbolMetrics | None:
+        ng = self._sdk()
+        raw = self._raw_prices(symbol, None, as_of)
+        if raw is None or len(raw) == 0:
+            return None
+        lowered = {str(c).strip().lower(): c for c in raw.columns}
+        close = raw[lowered["close"]].astype("float64")
+        # 달러 거래액: Turnover(실거래액) 우선, 없으면 close*volume.
+        if "turnover" in lowered:
+            dollar_vol = raw[lowered["turnover"]].astype("float64")
+        else:
+            dollar_vol = close * raw[lowered["volume"]].astype("float64")
+        adv = float(dollar_vol.tail(self._lookback_days).mean())
+        # ATR%: 전략 전체와 동일 정의(algorithms.filters._atr, Wilder) 재사용.
+        ndf = normalize_ohlcv(raw)
+        if len(ndf) == 0:
+            return None
+        atr = _atr(ndf, self._atr_period)
+        last_close = float(ndf["close"].iloc[-1])
+        atr_pct = float(atr.iloc[-1] / last_close) if last_close else float("nan")
+        listed = ng.first_quoted_date(symbol)
+        delisted = ng.last_quoted_date(symbol)  # active면 None
+        return SymbolMetrics(
+            listed_from=str(listed),
+            delisted_at=None if delisted is None else str(delisted),
+            avg_dollar_volume=adv,
+            atr_pct=atr_pct,
+            is_leveraged_or_inverse=self._is_leveraged(ng.security_name(symbol)),
+        )
+
+    def get_metrics(self, as_of: str) -> dict[str, SymbolMetrics]:
+        out: dict[str, SymbolMetrics] = {}
+        for symbol in self._candidate_symbols():
+            m = self._metrics_for(symbol, as_of)
+            if m is not None:
+                out[symbol] = m
+        return out
+
+    def get_constituents(self, as_of: str) -> list[str]:
+        return select_universe(
+            self.get_metrics(as_of),
+            as_of,
+            min_dollar_volume=self._min_dollar_volume,
+            atr_pct_band=self._atr_pct_band,
+        )
