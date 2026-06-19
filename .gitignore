@@ -15,6 +15,10 @@ venv/
 .env
 *.db
 
+# 생존편향 없는 벤더 데이터 (Norgate/Sharadar 등 — 라이선스상 재배포 금지 + 용량)
+data/
+*.parquet
+
 # phase execution outputs
 phases/**/phase*-output.json
 phases/**/step*-output.json

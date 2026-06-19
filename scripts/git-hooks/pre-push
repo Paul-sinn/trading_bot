@@ -6,13 +6,19 @@ set -uo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$REPO_ROOT"
 
-# pytest 탐색: 프로젝트 venv > PATH > python -m pytest.
+# pytest 탐색: 프로젝트 venv(mac/linux·windows) > PATH > python -m pytest.
 if [ -x ".venv/bin/pytest" ]; then
-  PYTEST=(.venv/bin/pytest)
+  PYTEST=(.venv/bin/pytest)                 # mac/linux venv
+elif [ -x ".venv/Scripts/pytest.exe" ]; then
+  PYTEST=(.venv/Scripts/pytest.exe)         # windows venv
+elif [ -x ".venv/Scripts/pytest" ]; then
+  PYTEST=(.venv/Scripts/pytest)
 elif command -v pytest >/dev/null 2>&1; then
   PYTEST=(pytest)
-elif python3 -c "import pytest" >/dev/null 2>&1; then
+elif command -v python3 >/dev/null 2>&1 && python3 -c "import pytest" >/dev/null 2>&1; then
   PYTEST=(python3 -m pytest)
+elif command -v python >/dev/null 2>&1 && python -c "import pytest" >/dev/null 2>&1; then
+  PYTEST=(python -m pytest)
 else
   echo "[pre-push] pytest가 설치되어 있지 않습니다. 'pip install pytest' 후 다시 시도하세요." >&2
   exit 1

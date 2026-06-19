@@ -31,11 +31,19 @@ fi
 # --- Python: 스테이징된 .py 구문 체크 (무거운 포매터는 강제하지 않음) ---
 PY_FILES="$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep '\.py$' || true)"
 if [ -n "$PY_FILES" ]; then
-  echo "[pre-commit] Python 구문 체크 (py_compile)..."
-  echo "$PY_FILES" | xargs python3 -m py_compile || {
-    echo "[pre-commit] py_compile 실패 — 커밋 차단" >&2
-    exit 1
-  }
+  # python3(mac/linux) 또는 python(windows) 탐색.
+  if command -v python3 >/dev/null 2>&1; then PY=python3
+  elif command -v python >/dev/null 2>&1; then PY=python
+  else PY=""; fi
+  if [ -n "$PY" ]; then
+    echo "[pre-commit] Python 구문 체크 (py_compile)..."
+    echo "$PY_FILES" | xargs "$PY" -m py_compile || {
+      echo "[pre-commit] py_compile 실패 — 커밋 차단" >&2
+      exit 1
+    }
+  else
+    echo "[pre-commit] python 미발견 → 구문 체크 건너뜀"
+  fi
 fi
 
 exit 0
