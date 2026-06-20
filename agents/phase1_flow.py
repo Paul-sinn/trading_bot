@@ -39,15 +39,21 @@ _NO_WEIGHT = float("inf")
 
 @dataclass(frozen=True)
 class CandidateContext:
-    """후보별 시장 컨텍스트 — 스캐너가 아직 안 만드는 비-전략 입력(VetoInput 조립용).
+    """후보별 시장 컨텍스트 — 스캐너/데이터에서 파생되는 증거 + 사이징(VetoInput 조립용).
 
-    has_stop_loss/position_size_ok는 stop_loss_pct>0 / quantity>0 로 추론한다.
+    has_stop_loss/position_size_ok는 stop_loss_pct>0 / quantity>0 로 추론한다. 증거는 직접 채우거나
+    agents.evidence.build_candidate_context로 자동 구성한다. technical_confirmation은 trend/volume/
+    relative_strength 셋의 AND(빌더가 설정). regime 산출 실패 시 None(fail-closed).
     """
 
     stop_loss_pct: float
     per_trade_risk_pct: float
-    regime: Regime
+    regime: Regime | None
     quantity: int
+    # 증거(transparency) — technical_confirmation = 아래 셋의 AND
+    trend_confirmed: bool = False
+    volume_confirmed: bool = False
+    relative_strength_confirmed: bool = False
     liquidity_ok: bool = False
     tier_exposure_ok: bool = False
     data_ok: bool = False
