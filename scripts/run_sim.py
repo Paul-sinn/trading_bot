@@ -66,6 +66,10 @@ from agents.baseline_comparison import (
     format_baseline_comparison,
 )
 from agents.order_plan import compute_order_plan_diagnostics, format_order_plan
+from agents.limit_fill_whatif import (
+    compute_limit_fill_whatif,
+    format_limit_fill_whatif,
+)
 from agents.historical_sim import HistoricalResult, run_historical_simulation
 from agents.norgate_bridge import DataAdapterError, load_norgate_folder
 from agents.perf_report import format_performance_report
@@ -331,6 +335,10 @@ def run(args) -> int:
     # 사전 주문계획(한정매수 + 진입 전 청산 첨부). 측정 전용 — can_trade_live=False, 실행 아님.
     order_plan = compute_order_plan_diagnostics(diag)
     sections.append(format_order_plan(order_plan))
+
+    # 한정매수 체결 what-if(일봉 OHLC로 체결 추정). 측정 전용 — 실 체결 불변.
+    fill_whatif = compute_limit_fill_whatif(order_plan, feat_price_data, trade_diag=diag)
+    sections.append(format_limit_fill_whatif(fill_whatif))
 
     # events-csv 사용 시: 이벤트 영향 진단(차단된 후보). 측정 전용.
     if isinstance(event_provider, EventCalendarProvider):
