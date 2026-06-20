@@ -43,6 +43,10 @@ from agents.event_impact import (
     format_event_impact,
 )
 from agents.evidence import EvidenceParams, MockEventRiskProvider
+from agents.feature_diagnostics import (
+    compute_feature_diagnostics,
+    format_feature_diagnostics,
+)
 from agents.historical_sim import HistoricalResult, run_historical_simulation
 from agents.norgate_bridge import DataAdapterError, load_norgate_folder
 from agents.perf_report import format_performance_report
@@ -230,6 +234,24 @@ def _final_marks(args, result) -> dict[str, float]:
     return marks
 
 
+def _feature_inputs(args):
+    """피처 진단용 (price_data, benchmark) 로드 — simulate와 동일 유니버스 규칙.
+
+    리포트 전용이므로 데이터 문제는 전체 실행을 막지 않고 ({}, None)으로 fail-safe 처리한다.
+    """
+    try:
+        data = load_norgate_folder(args.data_root)
+        benchmark_prices = close_series(data, args.benchmark)
+    except DataAdapterError:
+        return {}, None
+    aux = {_COMPASS_SYMBOL, _VIX_SYMBOL, args.benchmark}
+    if args.symbols:
+        universe = [s for s in args.symbols if s in data]
+    else:
+        universe = [s for s in data if s not in aux]
+    return {s: data[s] for s in universe}, benchmark_prices
+
+
 def run(args) -> int:
     """CLI 실행: 시뮬 → 리포트 출력/저장. 데이터 문제는 exit code 2(fail-closed)."""
     if args.compare_assume_no_events and not args.events_csv:
@@ -245,6 +267,13 @@ def run(args) -> int:
     perf_text = format_performance_report(result.performance)
     diag = compute_trade_diagnostics(result.multiday, final_prices=_final_marks(args, result))
     sections = [perf_text, format_trade_diagnostics(diag)]
+
+    # 피처 진단(측정 전용 — 매매/veto 불변, 판단 미사용). 데이터 로드 실패 시 섹션만 비운다.
+    feat_price_data, feat_benchmark = _feature_inputs(args)
+    feat_diag = compute_feature_diagnostics(
+        result.multiday, feat_price_data, benchmark_prices=feat_benchmark
+    )
+    sections.append(format_feature_diagnostics(feat_diag))
 
     # events-csv 사용 시: 이벤트 영향 진단(차단된 후보). 측정 전용.
     if isinstance(event_provider, EventCalendarProvider):
