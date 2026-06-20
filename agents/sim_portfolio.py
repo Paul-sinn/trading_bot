@@ -74,7 +74,7 @@ class ApplyResult:
 
 @dataclass(frozen=True)
 class PortfolioSnapshot:
-    """포트폴리오 상태 스냅샷(리포트 첨부용, 불변)."""
+    """포트폴리오 상태 스냅샷(리포트 첨부용, 불변). 가격이 주어지면 mark-to-market 반영."""
 
     starting_cash: float
     cash: float
@@ -85,6 +85,9 @@ class PortfolioSnapshot:
     open_symbols: tuple[str, ...]
     trade_count: int
     real_orders_placed: int = 0
+    market_value: float = 0.0       # 보유 포지션 시가합(가격 없으면 cost_basis 폴백)
+    unrealized_pnl: float = 0.0      # Σ (price − avg) × shares (가격 있는 포지션만)
+    data_missing: bool = False       # 보유 포지션 중 가격 결측 → fail-closed 표시
 
 
 class SimulatedPortfolio:
@@ -145,16 +148,33 @@ class SimulatedPortfolio:
         )
 
     def snapshot(self, prices: dict[str, float] | None = None) -> PortfolioSnapshot:
-        """현재 상태 스냅샷. real_orders_placed는 항상 0."""
+        """현재 상태 스냅샷(가격 주면 mark-to-market). real_orders_placed는 항상 0.
+
+        보유 포지션 중 가격이 결측이면 data_missing=True(fail-closed) — 결측분은 cost_basis로 폴백하고
+        미실현 PnL은 가격 있는 포지션만 집계한다(가짜 손익 금지).
+        """
+        open_syms = list(self._positions)
+        if prices is None:
+            data_missing = len(open_syms) > 0
+            unrealized = 0.0
+            market_value = self.total_exposure(None)  # cost_basis 폴백
+        else:
+            data_missing = any(s not in prices for s in open_syms)
+            unrealized = self.unrealized_pnl(prices)
+            market_value = self.total_exposure(prices)
+        equity = self._cash + market_value
         return PortfolioSnapshot(
             starting_cash=self.starting_cash,
             cash=self._cash,
-            total_exposure=self.total_exposure(prices),
-            equity=self.equity(prices),
+            total_exposure=market_value,
+            equity=equity,
             realized_pnl=self._realized_pnl,
-            open_positions=len(self._positions),
-            open_symbols=tuple(sorted(self._positions)),
+            open_positions=len(open_syms),
+            open_symbols=tuple(sorted(open_syms)),
             trade_count=len(self._trade_log),
+            market_value=market_value,
+            unrealized_pnl=unrealized,
+            data_missing=data_missing,
         )
 
     # --- 체결 적용 ---

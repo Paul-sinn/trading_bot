@@ -129,6 +129,7 @@ async def run_phase1_dry_run(
     executor: SimulatedExecutor | None = None,
     account_cash: float | None = None,
     portfolio: SimulatedPortfolio | None = None,
+    mark_prices: dict[str, float] | None = None,
 ) -> Phase1Result:
     """Phase 1 흐름을 배선해 dry-run 리포트 + 시뮬 주문/체결/포트폴리오를 만든다(실주문 0).
 
@@ -182,7 +183,8 @@ async def run_phase1_dry_run(
         )
         rows.append(build_dry_run_decision(veto_input, raw, rationale=rationale))
 
-    snapshot = portfolio.snapshot() if portfolio is not None else None
+    # 일별 mark-to-market: 종가(mark_prices)로 보유 포지션 평가 → 미실현 PnL/시가/equity 반영.
+    snapshot = portfolio.snapshot(mark_prices) if portfolio is not None else None
     report = build_dry_run_report(
         report_date=report_date,
         account_phase=account_phase,

@@ -170,11 +170,15 @@ def format_dry_run_report(report: DryRunReport) -> str:
         lines.append("[시뮬 포트폴리오 스냅샷]")
         lines.append(
             f"  starting_cash={snap.starting_cash:.2f}  cash={snap.cash:.2f}  "
-            f"exposure={snap.total_exposure:.2f}  equity={snap.equity:.2f}"
+            f"market_value={snap.market_value:.2f}  equity={snap.equity:.2f}"
         )
         lines.append(
-            f"  realized_pnl={snap.realized_pnl:.2f}  open_positions={snap.open_positions}  "
-            f"trades={snap.trade_count}  real_orders_placed={snap.real_orders_placed}"
+            f"  realized_pnl={snap.realized_pnl:.2f}  unrealized_pnl={snap.unrealized_pnl:.2f}  "
+            f"data_missing={str(snap.data_missing).lower()}"
+        )
+        lines.append(
+            f"  open_positions={snap.open_positions}  trades={snap.trade_count}  "
+            f"real_orders_placed={snap.real_orders_placed}"
         )
     lines.append("=" * 72)
     return "\n".join(lines)

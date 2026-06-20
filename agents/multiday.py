@@ -30,6 +30,7 @@ class DayInput:
     account_phase: str = "1"
     risk_mode_name: str = "B"
     decision_provider: object | None = None
+    mark_prices: dict[str, float] | None = None  # 그날 종가(mark-to-market). 없으면 cost_basis + data_missing.
 
 
 @dataclass(frozen=True)
@@ -80,6 +81,7 @@ async def run_phase1_multiday(
             contexts=day.contexts,
             report_date=day.date,
             portfolio=portfolio,  # 동일 포트폴리오 이월 — 다음 날이 갱신된 상태를 본다.
+            mark_prices=day.mark_prices,  # 그날 종가로 mark-to-market.
         )
         day_results.append(res)
 
