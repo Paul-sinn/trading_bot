@@ -20,11 +20,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+from typing import TYPE_CHECKING
+
 from agents.decision import Decision
 from agents.dry_run import build_dry_run_decision
 from agents.fill import FillContext, SimulatedFill, simulate_fill
 from agents.risk import check_risk_gate
 from algorithms.policy import VetoInput, VetoResult
+
+if TYPE_CHECKING:
+    from agents.sim_portfolio import SimulatedPortfolio
 
 # 전역 게이트 시그니처: () -> (allowed, reason). 기본은 agents.risk.check_risk_gate(env kill-switch).
 GlobalGate = Callable[[], "tuple[bool, str]"]
@@ -57,8 +62,14 @@ class SimulatedExecutor:
     게이트(전역 kill-switch + per-candidate hard-veto)는 재사용한다 — 새 게이트를 만들지 않는다.
     """
 
-    def __init__(self, *, global_gate: GlobalGate = check_risk_gate) -> None:
+    def __init__(
+        self,
+        *,
+        global_gate: GlobalGate = check_risk_gate,
+        portfolio: "SimulatedPortfolio | None" = None,
+    ) -> None:
         self._global_gate = global_gate
+        self._portfolio = portfolio
         self._orders: list[SimulatedOrder] = []
         self._fills: list[SimulatedFill] = []
         self.rejections: list[str] = []
@@ -116,12 +127,20 @@ class SimulatedExecutor:
                 veto, f"진입(BUY) 아님(raw={raw_decision.value}) — 시뮬 주문 없음"
             )
 
-        # ⑤ 통과 — 여기서만 시뮬 주문을 만든다(실주문 아님). fill_context 있으면 체결도 여기서만.
+        # ⑤ 통과 — 시뮬 주문/체결 구성. 포트폴리오 가드(현금/한도)는 기록 전에 검증(불가능 주문 방지).
         order = SimulatedOrder(symbol=veto_input.symbol, side="buy", quantity=quantity)
+        fill = simulate_fill(order, fill_context) if fill_context is not None else None
+
+        if self._portfolio is not None and fill is not None:
+            entry = veto_input.universe.get(veto_input.symbol)
+            tier = entry.primary_tier if entry is not None else None
+            apply_res = self._portfolio.apply_buy_fill(fill, tier=tier)
+            if not apply_res.applied:
+                # 불가능 주문(현금부족/한도초과 등) → 주문·체결 미기록, 포트폴리오 불변.
+                return self._reject(veto, f"포트폴리오 거부 — 시뮬 주문 없음: {apply_res.reason}")
+
         self._orders.append(order)
-        fill = None
-        if fill_context is not None:
-            fill = simulate_fill(order, fill_context)
+        if fill is not None:
             self._fills.append(fill)
         return SimExecutionResult(
             created=True,
