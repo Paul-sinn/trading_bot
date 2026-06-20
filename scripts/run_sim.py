@@ -65,6 +65,7 @@ from agents.baseline_comparison import (
     compute_baseline_comparison,
     format_baseline_comparison,
 )
+from agents.order_plan import compute_order_plan_diagnostics, format_order_plan
 from agents.historical_sim import HistoricalResult, run_historical_simulation
 from agents.norgate_bridge import DataAdapterError, load_norgate_folder
 from agents.perf_report import format_performance_report
@@ -326,6 +327,10 @@ def run(args) -> int:
         sections.append(format_baseline_comparison(comparison))
     except DataAdapterError:
         pass  # 베이스라인 섹션만 생략(리포트 전용 — 전체 실행은 막지 않음).
+
+    # 사전 주문계획(한정매수 + 진입 전 청산 첨부). 측정 전용 — can_trade_live=False, 실행 아님.
+    order_plan = compute_order_plan_diagnostics(diag)
+    sections.append(format_order_plan(order_plan))
 
     # events-csv 사용 시: 이벤트 영향 진단(차단된 후보). 측정 전용.
     if isinstance(event_provider, EventCalendarProvider):
