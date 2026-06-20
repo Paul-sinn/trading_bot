@@ -1,0 +1,86 @@
+"""다일 시뮬레이션 루프 — Phase 1 흐름을 여러 거래일에 돌리며 같은 포트폴리오를 이월한다.
+
+일별로 run_phase1_dry_run을 동일 SimulatedPortfolio로 재사용한다(중복 로직 없음). 포지션·현금·노출·
+실현PnL·매매로그가 날을 넘겨 누적된다.
+
+CRITICAL: 실브로커/Robinhood/MCP/라이브 주문 없음. real_orders_placed는 항상 0. LLM/이벤트 캘린더
+실연동 없음. 전략 시그널 변경 없음.
+
+spec: specs/multiday.md
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from agents.decision import MockDecisionProvider
+from agents.phase1_flow import CandidateContext, Phase1Result, run_phase1_dry_run
+from agents.sim_portfolio import PortfolioSnapshot, SimulatedPortfolio, TradeRecord
+
+
+@dataclass(frozen=True)
+class DayInput:
+    """하루치 입력. scanner는 async .scan()을 갖는 객체."""
+
+    date: str
+    scanner: object
+    contexts: dict[str, CandidateContext]
+    regime_name: str = "NORMAL_BULL"
+    compass_state: str = "strong"
+    account_phase: str = "1"
+    risk_mode_name: str = "B"
+    decision_provider: object | None = None
+
+
+@dataclass(frozen=True)
+class MultiDayResult:
+    """다일 결과. day_results는 일별, portfolio는 최종 누적."""
+
+    day_results: tuple[Phase1Result, ...]
+    portfolio: SimulatedPortfolio
+
+    @property
+    def real_orders_placed(self) -> int:
+        """항상 0 — 실 브로커 호출 없음."""
+        return 0
+
+    @property
+    def daily_snapshots(self) -> tuple[PortfolioSnapshot | None, ...]:
+        """일별 종료 시점 누적 스냅샷."""
+        return tuple(r.report.portfolio_snapshot for r in self.day_results)
+
+    @property
+    def trade_log(self) -> tuple[TradeRecord, ...]:
+        """전 기간 누적 매매로그."""
+        return self.portfolio.trade_log
+
+
+async def run_phase1_multiday(
+    *,
+    days: list[DayInput],
+    policy,
+    account_cash: float | None = None,
+    portfolio: SimulatedPortfolio | None = None,
+) -> MultiDayResult:
+    """Phase 1 흐름을 일별로 돌리며 동일 포트폴리오를 이월한다(실주문 0)."""
+    if portfolio is None:
+        portfolio = SimulatedPortfolio(account_cash if account_cash is not None else 0.0)
+
+    day_results: list[Phase1Result] = []
+    for day in days:
+        provider = day.decision_provider or MockDecisionProvider()
+        res = await run_phase1_dry_run(
+            scanner=day.scanner,
+            decision_provider=provider,
+            policy=policy,
+            account_phase=day.account_phase,
+            risk_mode_name=day.risk_mode_name,
+            regime_name=day.regime_name,
+            compass_state=day.compass_state,
+            contexts=day.contexts,
+            report_date=day.date,
+            portfolio=portfolio,  # 동일 포트폴리오 이월 — 다음 날이 갱신된 상태를 본다.
+        )
+        day_results.append(res)
+
+    return MultiDayResult(tuple(day_results), portfolio)
