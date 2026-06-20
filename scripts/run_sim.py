@@ -47,6 +47,7 @@ from agents.feature_diagnostics import (
     compute_feature_diagnostics,
     format_feature_diagnostics,
 )
+from agents.feature_outcome import compute_feature_outcome, format_feature_outcome
 from agents.historical_sim import HistoricalResult, run_historical_simulation
 from agents.norgate_bridge import DataAdapterError, load_norgate_folder
 from agents.perf_report import format_performance_report
@@ -274,6 +275,10 @@ def run(args) -> int:
         result.multiday, feat_price_data, benchmark_prices=feat_benchmark
     )
     sections.append(format_feature_diagnostics(feat_diag))
+
+    # 피처-성과 분석(승 vs 패 진입 피처 차이). 측정 전용 — 매매/veto 불변.
+    outcome = compute_feature_outcome(diag, feat_diag)
+    sections.append(format_feature_outcome(outcome))
 
     # events-csv 사용 시: 이벤트 영향 진단(차단된 후보). 측정 전용.
     if isinstance(event_provider, EventCalendarProvider):
