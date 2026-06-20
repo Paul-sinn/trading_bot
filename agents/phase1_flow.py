@@ -26,6 +26,7 @@ from agents.dry_run import (
 )
 from agents.fill import FillContext, SimulatedFill
 from agents.sim_execution import SimulatedExecutor, SimulatedOrder
+from agents.sim_portfolio import SimulatedPortfolio
 from algorithms.policy import (
     Policy,
     VetoInput,
@@ -73,6 +74,7 @@ class Phase1Result:
     simulated_orders: tuple[SimulatedOrder, ...]
     weight_suggestions: dict[str, WeightSuggestion]
     simulated_fills: tuple[SimulatedFill, ...] = ()
+    portfolio: SimulatedPortfolio | None = None
 
     @property
     def real_orders_placed(self) -> int:
@@ -126,16 +128,21 @@ async def run_phase1_dry_run(
     report_date: str,
     executor: SimulatedExecutor | None = None,
     account_cash: float | None = None,
+    portfolio: SimulatedPortfolio | None = None,
 ) -> Phase1Result:
-    """Phase 1 흐름을 배선해 dry-run 리포트 + 시뮬 주문/체결을 만든다(실주문 0).
+    """Phase 1 흐름을 배선해 dry-run 리포트 + 시뮬 주문/체결/포트폴리오를 만든다(실주문 0).
 
-    account_cash가 주어지면 주문 생성 시 체결도 시뮬한다(reference_price = 후보 entry).
+    account_cash(또는 portfolio)가 주어지면 단일 시뮬 포트폴리오를 후보 전체에 공유한다 — 각 체결이
+    현금/포지션/노출/PnL/로그를 누적 갱신하고, 뒤 후보는 갱신된 상태(줄어든 현금)를 본다. 불가능 주문은
+    포트폴리오 가드로 차단된다. reference_price = 후보 entry.
     """
     mode = policy.mode(risk_mode_name)
     if mode is None:
         raise ValueError(f"알 수 없는 risk_mode: {risk_mode_name!r}")
 
-    executor = executor or SimulatedExecutor()
+    if portfolio is None and account_cash is not None:
+        portfolio = SimulatedPortfolio(account_cash)
+    executor = executor or SimulatedExecutor(portfolio=portfolio)
     universe = policy.universe
 
     candidates = await scanner.scan()
@@ -160,15 +167,12 @@ async def run_phase1_dry_run(
             veto_input = _veto_input_for(symbol, mode, universe, weight, ctx)
             rationale = f"weight 제안: {sug.status}"
 
-        # 체결 시뮬: account_cash + 유효 reference_price 있을 때만(주문 생성 분기에서만 체결됨).
+        # 체결 시뮬: 포트폴리오의 현재(누적) 현금을 reference로 → 뒤 후보는 줄어든 현금을 본다.
+        cash_for_fill = portfolio.cash if portfolio is not None else account_cash
         fill_context = None
-        if (
-            account_cash is not None
-            and ctx is not None
-            and ctx.reference_price > 0
-        ):
+        if cash_for_fill is not None and ctx is not None and ctx.reference_price > 0:
             fill_context = FillContext(
-                reference_price=ctx.reference_price, account_cash=account_cash
+                reference_price=ctx.reference_price, account_cash=cash_for_fill
             )
 
         # RiskGate 게이트 + 시뮬 주문(+체결) 생성(통과 시에만). 우회 불가.
@@ -178,6 +182,7 @@ async def run_phase1_dry_run(
         )
         rows.append(build_dry_run_decision(veto_input, raw, rationale=rationale))
 
+    snapshot = portfolio.snapshot() if portfolio is not None else None
     report = build_dry_run_report(
         report_date=report_date,
         account_phase=account_phase,
@@ -185,7 +190,8 @@ async def run_phase1_dry_run(
         regime=regime_name,
         compass_state=compass_state,
         decisions=tuple(rows),
+        portfolio_snapshot=snapshot,
     )
     return Phase1Result(
-        report, executor.simulated_orders, suggestions, executor.simulated_fills
+        report, executor.simulated_orders, suggestions, executor.simulated_fills, portfolio
     )

@@ -18,6 +18,7 @@ spec: specs/dry_run.md
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from agents.decision import Decision
 from algorithms.policy import (
@@ -26,6 +27,9 @@ from algorithms.policy import (
     evaluate_hard_veto,
     tier_status,
 )
+
+if TYPE_CHECKING:
+    from agents.sim_portfolio import PortfolioSnapshot
 
 
 @dataclass(frozen=True)
@@ -55,6 +59,7 @@ class DryRunReport:
     decisions: tuple[DryRunDecision, ...]
     mdd_hard_stop_pct: float = 0.20
     no_return_guarantee: bool = True
+    portfolio_snapshot: "PortfolioSnapshot | None" = None
 
     @property
     def orders_placed(self) -> int:
@@ -116,6 +121,7 @@ def build_dry_run_report(
     regime: str,
     compass_state: str,
     decisions: tuple[DryRunDecision, ...],
+    portfolio_snapshot: "PortfolioSnapshot | None" = None,
 ) -> DryRunReport:
     """헤더 + 후보별 판단을 리포트로 조립한다. orders_placed는 property로 0 고정."""
     return DryRunReport(
@@ -125,6 +131,7 @@ def build_dry_run_report(
         regime=regime,
         compass_state=compass_state,
         decisions=tuple(decisions),
+        portfolio_snapshot=portfolio_snapshot,
     )
 
 
@@ -157,5 +164,17 @@ def format_dry_run_report(report: DryRunReport) -> str:
     lines.append(f"  mdd_hard_stop       : {report.mdd_hard_stop_pct:.2f} (불변)")
     lines.append(f"  no_return_guarantee : {str(report.no_return_guarantee).lower()}")
     lines.append("  note                : 자동 라이브 진입 없음. 사람 검토용 리포트.")
+    snap = report.portfolio_snapshot
+    if snap is not None:
+        lines.append("")
+        lines.append("[시뮬 포트폴리오 스냅샷]")
+        lines.append(
+            f"  starting_cash={snap.starting_cash:.2f}  cash={snap.cash:.2f}  "
+            f"exposure={snap.total_exposure:.2f}  equity={snap.equity:.2f}"
+        )
+        lines.append(
+            f"  realized_pnl={snap.realized_pnl:.2f}  open_positions={snap.open_positions}  "
+            f"trades={snap.trade_count}  real_orders_placed={snap.real_orders_placed}"
+        )
     lines.append("=" * 72)
     return "\n".join(lines)

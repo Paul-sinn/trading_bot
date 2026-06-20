@@ -72,6 +72,21 @@ class ApplyResult:
     trade: TradeRecord | None
 
 
+@dataclass(frozen=True)
+class PortfolioSnapshot:
+    """포트폴리오 상태 스냅샷(리포트 첨부용, 불변)."""
+
+    starting_cash: float
+    cash: float
+    total_exposure: float
+    equity: float
+    realized_pnl: float
+    open_positions: int
+    open_symbols: tuple[str, ...]
+    trade_count: int
+    real_orders_placed: int = 0
+
+
 class SimulatedPortfolio:
     """시뮬 현금/포지션/노출/PnL/로그를 추적한다. 실주문 없음(real_orders_placed=0)."""
 
@@ -127,6 +142,19 @@ class SimulatedPortfolio:
             pos.unrealized_pnl(prices[sym])
             for sym, pos in self._positions.items()
             if sym in prices
+        )
+
+    def snapshot(self, prices: dict[str, float] | None = None) -> PortfolioSnapshot:
+        """현재 상태 스냅샷. real_orders_placed는 항상 0."""
+        return PortfolioSnapshot(
+            starting_cash=self.starting_cash,
+            cash=self._cash,
+            total_exposure=self.total_exposure(prices),
+            equity=self.equity(prices),
+            realized_pnl=self._realized_pnl,
+            open_positions=len(self._positions),
+            open_symbols=tuple(sorted(self._positions)),
+            trade_count=len(self._trade_log),
         )
 
     # --- 체결 적용 ---
