@@ -61,6 +61,10 @@ from agents.robustness_report import (
     compute_robustness_report,
     format_robustness_report,
 )
+from agents.baseline_comparison import (
+    compute_baseline_comparison,
+    format_baseline_comparison,
+)
 from agents.historical_sim import HistoricalResult, run_historical_simulation
 from agents.norgate_bridge import DataAdapterError, load_norgate_folder
 from agents.perf_report import format_performance_report
@@ -308,6 +312,20 @@ def run(args) -> int:
     # 강건성/안정성(심볼·기간 의존도). 측정 전용 — 기본은 트레이드 제거 근사(추가 재시뮬 없음).
     robustness = compute_robustness_report(result.multiday, feat_price_data, trade_diag=diag)
     sections.append(format_robustness_report(robustness))
+
+    # 베이스라인 비교(SPY/QQQ/equal-weight/best-single 매수보유). 측정 전용 — 실 매매 미적용.
+    try:
+        full_data = load_norgate_folder(args.data_root)
+        win = diag.equity_over_time
+        b_start = win[0][0] if win else None
+        b_end = win[-1][0] if win else None
+        comparison = compute_baseline_comparison(
+            result.performance, full_data, universe=list(feat_price_data),
+            start=b_start, end=b_end, benchmark_symbol=args.benchmark,
+        )
+        sections.append(format_baseline_comparison(comparison))
+    except DataAdapterError:
+        pass  # 베이스라인 섹션만 생략(리포트 전용 — 전체 실행은 막지 않음).
 
     # events-csv 사용 시: 이벤트 영향 진단(차단된 후보). 측정 전용.
     if isinstance(event_provider, EventCalendarProvider):
