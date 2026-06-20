@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 
 # 단일 진실 재사용(재정의 금지) — ADR-003 시스템 하드캡. 헌법 per-trade 검사가 이 값을 강제한다.
 from algorithms.goal_planner import SYSTEM_MAX_RISK_PCT
+from algorithms.regime import Regime, policy_for
 
 # 후보 적격에서 제외하는 status (헌법 dry-run 템플릿: reject·data_missing만 제외).
 ELIGIBLE_EXCLUDED_STATUSES = frozenset({"reject", "data_missing"})
@@ -221,3 +222,84 @@ def mode_allows_symbol(symbol: str, mode: RiskMode, universe: UniversePolicy) ->
     if mode.tier2_whitelist_only and entry.primary_tier == "2":
         return entry.symbol in mode.tier2_whitelist
     return True
+
+
+# --- hard-veto 종합 (헌법 RiskGate per-candidate 평가자) ---
+# ⚠️ agents.risk가 아니라 여기 둔다(policy→goal_planner→agents.risk 순환 회피). 이 함수는 순수
+# per-candidate 평가자이며 전역 게이트 agents.risk.check_risk_gate(단일 진입점)를 대체하지 않는다.
+
+
+@dataclass(frozen=True)
+class VetoInput:
+    """후보 1건의 모든 사실. bool 기본 False·regime None = fail-closed(누락 시 막힘)."""
+
+    symbol: str
+    mode: RiskMode
+    universe: UniversePolicy
+    per_trade_risk_pct: float        # sizing 브리지 산출(분수)
+    position_weight: float
+    stop_loss_pct: float
+    regime: Regime | None = None
+    has_stop_loss: bool = False
+    position_size_ok: bool = False
+    liquidity_ok: bool = False
+    tier_exposure_ok: bool = False
+    data_ok: bool = False
+    ipo_data_ok: bool = False
+    event_risk_checked: bool = False
+    technical_confirmation: bool = False
+    manual_override: bool = False    # needs_review 수동 승인
+
+
+@dataclass(frozen=True)
+class VetoResult:
+    """hard-veto 결과. reasons는 모든 veto 사유(통과면 빈 튜플). risk_check는 두 불변식 상세."""
+
+    passed: bool
+    reasons: tuple[str, ...]
+    risk_check: RiskCheck
+
+
+def evaluate_hard_veto(inp: VetoInput) -> VetoResult:
+    """헌법 RiskGate hard-veto를 한 번에 평가한다(모든 사유 수집 — 첫 위반에서 멈추지 않음).
+
+    적격·needs_review·모드허용·두 리스크 불변식·per-candidate 게이트·레짐을 종합한다. fail-closed:
+    누락/False/불명은 막는 쪽. passed = (사유 0개). 포트폴리오 손실한도(daily/weekly/consecutive)는
+    계좌-상태 가드(RiskAgent 도메인)라 여기 미포함(spec 참조).
+    """
+    sym, mode, u = inp.symbol, inp.mode, inp.universe
+    reasons: list[str] = []
+
+    if not is_candidate_eligible(sym, u):
+        reasons.append(f"{sym}: 후보 적격 아님(reject/data_missing/비거래/미등록)")
+    if tier_status(sym, u) == "needs_review" and not inp.manual_override:
+        reasons.append(f"{sym}: needs_review — manual override 없음")
+    if not mode_allows_symbol(sym, mode, u):
+        reasons.append(f"{sym}: 모드 {mode.name}가 티어 불허(C-mode 제한 등)")
+
+    risk_check = evaluate_risk(
+        inp.per_trade_risk_pct, inp.position_weight, inp.stop_loss_pct, mode
+    )
+    if not risk_check.passed:
+        reasons.append(f"리스크 불변식 veto: {risk_check.reason}")
+
+    if not inp.has_stop_loss:
+        reasons.append("stop_loss 없음")
+    if not inp.position_size_ok:
+        reasons.append("position_size 계산 실패/0")
+    if not inp.liquidity_ok:
+        reasons.append("liquidity/spread 기준 실패")
+    if inp.regime is None or not policy_for(inp.regime).allow_new_entry:
+        reasons.append(f"market regime risk-off/불명({inp.regime})")
+    if not inp.tier_exposure_ok:
+        reasons.append("sector/tier exposure 과다")
+    if not inp.data_ok:
+        reasons.append("데이터 결측/이상치")
+    if not inp.ipo_data_ok:
+        reasons.append("IPO/신규상장 데이터 부족 + 특례 없음")
+    if not inp.event_risk_checked:
+        reasons.append("earnings/FOMC/CPI 등 고임팩트 이벤트 리스크 미확인")
+    if not inp.technical_confirmation:
+        reasons.append("AI/news/SNS만 있고 technical confirmation 없음")
+
+    return VetoResult(passed=len(reasons) == 0, reasons=tuple(reasons), risk_check=risk_check)

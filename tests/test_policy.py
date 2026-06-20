@@ -10,12 +10,16 @@ import math
 import pytest
 
 from algorithms.goal_planner import SYSTEM_MAX_RISK_PCT
+from algorithms.regime import Regime
 from algorithms.policy import (
     RiskCheck,
     RiskMode,
     TierEntry,
     UniversePolicy,
+    VetoInput,
+    VetoResult,
     account_loss_pct,
+    evaluate_hard_veto,
     evaluate_risk,
     is_candidate_eligible,
     mode_allows_symbol,
@@ -195,3 +199,120 @@ def test_c_mode_restricts_to_tier0_2_and_whitelist():
     assert mode_allows_symbol("SMCI", c, u) is False   # T2 비화이트리스트 → 차단
     assert mode_allows_symbol("SPCX", c, u) is False   # T4B ∉ C
     assert mode_allows_symbol("NOPE", c, u) is False   # 미등록 fail-closed
+
+
+# --- evaluate_hard_veto (헌법 RiskGate 종합) ---
+
+
+def _clean_veto_input(**overrides) -> VetoInput:
+    """모든 게이트를 통과하는 깨끗한 입력(NVDA, B, 정상 레짐). 테스트가 한 필드씩 뒤집어 검증."""
+    base = dict(
+        symbol="NVDA",
+        mode=_mode_b(),
+        universe=_universe(),
+        per_trade_risk_pct=0.04,   # <= 0.05
+        position_weight=0.5,
+        stop_loss_pct=0.08,        # account_loss 0.04 <= 0.07(B)
+        regime=Regime.NORMAL_BULL,
+        has_stop_loss=True,
+        position_size_ok=True,
+        liquidity_ok=True,
+        tier_exposure_ok=True,
+        data_ok=True,
+        ipo_data_ok=True,
+        event_risk_checked=True,
+        technical_confirmation=True,
+        manual_override=False,
+    )
+    base.update(overrides)
+    return VetoInput(**base)
+
+
+def test_clean_input_passes():
+    res = evaluate_hard_veto(_clean_veto_input())
+    assert res.passed is True
+    assert res.reasons == ()
+    assert isinstance(res.risk_check, RiskCheck) and res.risk_check.passed is True
+
+
+def test_default_veto_input_is_fail_closed():
+    # bool 기본 False + regime None → 다수 사유로 막힘(누락 = 차단).
+    res = evaluate_hard_veto(
+        VetoInput(symbol="NVDA", mode=_mode_b(), universe=_universe(),
+                  per_trade_risk_pct=0.04, position_weight=0.5, stop_loss_pct=0.08)
+    )
+    assert res.passed is False
+    assert len(res.reasons) >= 5
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "has_stop_loss", "position_size_ok", "liquidity_ok", "tier_exposure_ok",
+        "data_ok", "ipo_data_ok", "event_risk_checked", "technical_confirmation",
+    ],
+)
+def test_each_false_flag_vetoes(field):
+    res = evaluate_hard_veto(_clean_veto_input(**{field: False}))
+    assert res.passed is False
+    assert len(res.reasons) == 1  # 깨끗한 입력에서 한 필드만 뒤집음
+
+
+def test_regime_risk_off_or_unknown_vetoes():
+    for regime in (Regime.BEARISH, Regime.PANIC, None):
+        res = evaluate_hard_veto(_clean_veto_input(regime=regime))
+        assert res.passed is False
+
+
+def test_risk_invariant_veto_propagates_to_hard_veto():
+    # per_trade 0.06 > 0.05 → evaluate_risk veto가 hard-veto 사유로 전파.
+    res = evaluate_hard_veto(_clean_veto_input(per_trade_risk_pct=0.06))
+    assert res.passed is False
+    assert res.risk_check.per_trade_pass is False
+
+
+def test_account_loss_over_b_cap_vetoes_via_hard_veto():
+    # weight 1.0 × stop 0.09 = 0.09 > 0.07(B) → veto.
+    res = evaluate_hard_veto(_clean_veto_input(position_weight=1.0, stop_loss_pct=0.09))
+    assert res.passed is False
+    assert res.risk_check.account_loss_pass is False
+
+
+def test_needs_review_vetoed_without_override():
+    # SMCI: needs_review, T2, B 허용·적격이지만 override 없으면 veto (concern #6).
+    inp = _clean_veto_input(symbol="SMCI")
+    res = evaluate_hard_veto(inp)
+    assert res.passed is False
+    assert any("needs_review" in r for r in res.reasons)
+
+
+def test_needs_review_passes_with_manual_override():
+    res = evaluate_hard_veto(_clean_veto_input(symbol="SMCI", manual_override=True))
+    assert res.passed is True
+
+
+def test_reject_and_data_missing_symbols_vetoed():
+    for sym in ("DEADX", "BADCO"):  # reject / data_missing
+        res = evaluate_hard_veto(_clean_veto_input(symbol=sym))
+        assert res.passed is False
+
+
+def test_c_mode_tier5_symbol_vetoed():
+    # SOUN T5: C.allowed_tiers 밖 → mode_allows 실패로 veto.
+    res = evaluate_hard_veto(_clean_veto_input(symbol="SOUN", mode=_mode_c()))
+    assert res.passed is False
+
+
+def test_veto_collects_multiple_reasons():
+    res = evaluate_hard_veto(
+        _clean_veto_input(has_stop_loss=False, liquidity_ok=False, data_ok=False)
+    )
+    assert res.passed is False
+    assert len(res.reasons) == 3
+
+
+def test_vetoresult_is_frozen():
+    res = evaluate_hard_veto(_clean_veto_input())
+    assert isinstance(res, VetoResult)
+    with pytest.raises(Exception):
+        res.passed = False  # type: ignore[misc]

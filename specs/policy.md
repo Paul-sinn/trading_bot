@@ -100,9 +100,65 @@ class RiskCheck:                    # evaluate_risk 결과 — 두 불변식 값
 - C 모드 + Tier2 비화이트리스트(예: SMCI) → mode_allows_symbol False.
 - C 모드 + Tier3+ → allowed_tiers 밖 → False.
 
+## hard-veto 종합 (step 4 — 헌법 RiskGate 12조건)
+
+후보 1건의 모든 사실을 받아 헌법 hard-veto 조건을 **한 번에 평가**하는 순수 함수. config의
+`riskgate_hard_veto_conditions`(docs/UNIVERSE_TIERS §6) + 두 리스크 불변식 + 티어 적격 + needs_review를
+종합한다. fail-closed: 입력이 비거나 False면 막는 쪽.
+
+⚠️ 배치: `agents/risk.py`가 아니라 **여기(algorithms/policy.py)**에 둔다 — `agents.risk`를 import하면
+`policy → goal_planner → agents.risk` 순환이 된다. 이 함수는 순수 per-candidate 평가자이며, 전역 게이트
+`agents.risk.check_risk_gate`(단일 진입점)를 **대체하지 않는다**. 라이브 배선(주문 전 경로 삽입)은 후속 step.
+
+```python
+@dataclass(frozen=True)
+class VetoInput:
+    symbol: str
+    mode: RiskMode
+    universe: UniversePolicy
+    per_trade_risk_pct: float        # sizing 브리지 산출(분수)
+    position_weight: float
+    stop_loss_pct: float
+    regime: Regime | None = None     # None → fail-closed veto
+    has_stop_loss: bool = False      # 모든 bool 기본 False = fail-closed(누락 시 막힘)
+    position_size_ok: bool = False
+    liquidity_ok: bool = False
+    tier_exposure_ok: bool = False
+    data_ok: bool = False
+    ipo_data_ok: bool = False
+    event_risk_checked: bool = False
+    technical_confirmation: bool = False
+    manual_override: bool = False    # needs_review 수동 승인
+
+@dataclass(frozen=True)
+class VetoResult:
+    passed: bool
+    reasons: tuple[str, ...]         # veto 사유 전부(통과면 빈 튜플)
+    risk_check: RiskCheck            # 두 불변식 상세
+```
+
+### `evaluate_hard_veto(inp) -> VetoResult`
+모든 사유를 모아서(첫 위반에서 멈추지 않음 — 사람 검토용) 반환. veto 조건:
+1. `is_candidate_eligible` 실패(reject/data_missing/비거래/미등록)
+2. `tier_status == needs_review` AND `manual_override` 아님 → veto (concern: SMCI 류 자동통과 금지)
+3. `mode_allows_symbol` 실패(C가 Tier3+ 또는 Tier2 비화이트리스트 등)
+4. `evaluate_risk(...)` 두 불변식 실패(per-trade 5% / account-loss 모드캡, AND)
+5. `has_stop_loss` False / 6. `position_size_ok` False / 7. `liquidity_ok` False
+8. regime risk-off 또는 None(`policy_for(regime).allow_new_entry` False) — algorithms.regime 재사용
+9. `tier_exposure_ok` False / 10. `data_ok` False / 11. `ipo_data_ok` False
+12. `event_risk_checked` False / 13. `technical_confirmation` False(AI/news 단독 금지)
+`passed = (사유 0개)`.
+
+### 포트폴리오 손실한도(daily/weekly/consecutive)는 비범위
+헌법 12조건 중 daily/weekly/consecutive loss limit은 **계좌-상태 가드**로 RiskAgent(agents/risk.py
+`evaluate`, 이미 MDD/손실/포지션 구현) 도메인이다. per-candidate veto가 아니며, 현재 config에서
+`data_missing`(미확정 TODO)이라 비활성. 미설정 정책 노브를 per-candidate에서 막아 모든 거래를 영구
+veto하지 않는다(설정되면 RiskAgent 레이어에서 강제).
+
 ## 비범위 (이 step에서 하지 않음 — 후속 step)
-- JSON 로더(`config/*.json` → 모델). step 2.
-- Concentration Phase 캡 → position_weight 제안 로직. (evaluate_risk는 weight를 입력으로만 받는다.)
-- hard-veto 12조건 종합(`agents/risk.py` 확장). step 4.
+- JSON 로더(`config/*.json` → 모델). ✅ step 2.
+- sizing→불변식 분수 브리지. ✅ step 3.
+- Concentration Phase 캡 → position_weight 제안 로직. (evaluate_risk/veto는 weight를 입력으로만 받는다.)
 - dry-run 리포트 객체/빌더. step 5.
+- hard-veto를 주문 전 경로/`check_risk_gate`에 라이브 배선. (실행 범위 밖)
 - 실주문/브로커/실행/전략 시그널/사이징 수치. (불변)
