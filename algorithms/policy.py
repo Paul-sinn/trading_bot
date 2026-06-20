@@ -103,12 +103,53 @@ class PortfolioGuards:
 
 
 @dataclass(frozen=True)
+class TierWeightCap:
+    """한 티어밴드의 배치 비중 캡(분수). special이 있으면 low/high 무시."""
+
+    low: float | None
+    high: float | None
+    special: str | None  # "small_only" | "conservative" | None
+
+
+@dataclass(frozen=True)
+class ConcentrationPhase:
+    """계좌 phase별 집중 규칙. Phase1은 tier_caps(per-tier), Phase2~3은 single_position_low."""
+
+    phase: str
+    account_usd_min: float
+    account_usd_max: float | None
+    mode: str | None
+    tier_caps: dict  # band(str) -> TierWeightCap
+    single_position_low: float | None
+
+
+@dataclass(frozen=True)
+class ConcentrationPolicy:
+    """집중 정책 전체(phase 목록). 로더가 config concentration_phases에서 빌드."""
+
+    phases: tuple[ConcentrationPhase, ...]
+
+    def phase(self, name: str) -> ConcentrationPhase | None:
+        return next((p for p in self.phases if p.phase == name), None)
+
+    def phase_for_equity(self, equity: float) -> ConcentrationPhase | None:
+        """계좌 자산으로 phase 조회([min, max) 반개구간, max None=상한 없음)."""
+        for p in self.phases:
+            if equity >= p.account_usd_min and (
+                p.account_usd_max is None or equity < p.account_usd_max
+            ):
+                return p
+        return None
+
+
+@dataclass(frozen=True)
 class Policy:
     """집계 정책 — 로더가 config/*.json 에서 빌드한다. 순수 컨테이너(I/O 없음)."""
 
     universe: UniversePolicy
     risk_modes: tuple[RiskMode, ...]
     portfolio_guards: PortfolioGuards
+    concentration: ConcentrationPolicy
 
     def mode(self, name: str) -> RiskMode | None:
         """이름으로 리스크 모드 조회. 없으면 None."""
@@ -118,6 +159,18 @@ class Policy:
     def default_mode(self) -> RiskMode | None:
         """default=True 모드(헌법 기본 B). 없으면 None."""
         return next((m for m in self.risk_modes if m.default), None)
+
+
+@dataclass(frozen=True)
+class WeightSuggestion:
+    """position_weight 제안 결과. ⚠️ 제안일 뿐 거래 허가가 아니다(이후 hard-veto 통과 필요)."""
+
+    status: str  # "ok" | "needs_adjustment" | "rejected" | "small_only"
+    suggested_weight: float | None
+    raw_weight: float | None
+    account_loss_at_suggested: float | None
+    account_loss_cap: float
+    reason: str
 
 
 # --- 순수 평가 함수 ---
@@ -222,6 +275,103 @@ def mode_allows_symbol(symbol: str, mode: RiskMode, universe: UniversePolicy) ->
     if mode.tier2_whitelist_only and entry.primary_tier == "2":
         return entry.symbol in mode.tier2_whitelist
     return True
+
+
+# --- Concentration Phase → position_weight 제안 (정책 기반) ---
+# ⚠️ 제안일 뿐 거래 허가가 아니다. 제안 weight도 이후 account_loss = weight × stop ≤ 모드캡을 통과해야 한다.
+
+WEIGHT_OK = "ok"
+WEIGHT_NEEDS_ADJUSTMENT = "needs_adjustment"
+WEIGHT_REJECTED = "rejected"
+WEIGHT_SMALL_ONLY = "small_only"
+
+# 티어 → concentration 밴드 키 매핑.
+_TIER_BANDS = {
+    "0": "tier_0_2", "1": "tier_0_2", "2": "tier_0_2",
+    "3": "tier_3", "4A": "tier_4A", "4B": "tier_4B", "5": "tier_5", "6": "tier_6",
+}
+
+
+def suggest_position_weight(
+    phase: str,
+    primary_tier: str,
+    mode: RiskMode,
+    stop_loss_pct: float,
+    concentration: ConcentrationPolicy,
+) -> WeightSuggestion:
+    """phase·tier·모드·집중규칙으로 position_weight를 제안한다(fail-closed).
+
+    Tier5는 모든 phase에서 small_only(집중 금지). C-mode는 허용 티어만. 제안 weight의
+    account_loss(weight × stop)가 모드캡을 넘으면 축소 제안(needs_adjustment), stop 무효면 rejected.
+    """
+    cap = mode.account_loss_cap
+
+    # 1. 모드 허용 판정. 심볼레벨 화이트리스트는 hard-veto 담당(여기 중복 안 함).
+    #    Tier5/6은 config allowed_tiers에 없지만 tradable(특수). default 모드(B)에서만 특수 허용,
+    #    비-default(C)는 0~2만 → Tier3+·5·6 불허("C-mode only where policy permits").
+    permitted = primary_tier in mode.allowed_tiers or (
+        mode.default and primary_tier in ("5", "6")
+    )
+    if not permitted:
+        return WeightSuggestion(
+            WEIGHT_REJECTED, None, None, None, cap,
+            f"모드 {mode.name}가 티어 {primary_tier} 불허(정책 허용 티어만)",
+        )
+
+    # 2. Tier5 → small_only / Tier6 → conservative(수동). 모든 phase에서 집중 사이징 금지.
+    if primary_tier == "5":
+        return WeightSuggestion(
+            WEIGHT_SMALL_ONLY, None, None, None, cap,
+            "Tier5: concentration 금지 — small position only(exposure cap data_missing, 수동 소액)",
+        )
+    if primary_tier == "6":
+        return WeightSuggestion(
+            WEIGHT_NEEDS_ADJUSTMENT, None, None, None, cap,
+            "Tier6: crypto-equity — conservative 수동 사이징(config: conservative_per_tier_2_or_5)",
+        )
+
+    # 3. phase 조회.
+    ph = concentration.phase(phase)
+    if ph is None:
+        return WeightSuggestion(WEIGHT_REJECTED, None, None, None, cap, f"phase {phase} 미정의")
+
+    # 4. 원안 비중(raw): Phase1 per-tier 하단, 아니면 single_position_low(Phase2~3).
+    band = _TIER_BANDS.get(primary_tier)
+    tcap = ph.tier_caps.get(band) if band else None
+    if tcap is not None:
+        if tcap.special == "small_only":
+            return WeightSuggestion(WEIGHT_SMALL_ONLY, None, None, None, cap, f"{band}: small_only")
+        if tcap.special == "conservative" or tcap.low is None:
+            return WeightSuggestion(
+                WEIGHT_NEEDS_ADJUSTMENT, None, None, None, cap,
+                f"{band}: conservative/수동 사이징(config 범위 미지정)",
+            )
+        raw = tcap.low
+    elif ph.single_position_low is not None:
+        raw = ph.single_position_low
+    else:
+        return WeightSuggestion(
+            WEIGHT_NEEDS_ADJUSTMENT, None, None, None, cap,
+            f"phase {phase}: per-tier/per-position 캡 미정의 — 수동 포트폴리오 사이징",
+        )
+
+    # 5. stop 검증.
+    if math.isnan(stop_loss_pct) or stop_loss_pct <= 0:
+        return WeightSuggestion(WEIGHT_REJECTED, None, raw, None, cap, "stop_loss_pct 무효(<=0/NaN)")
+
+    # 6. account_loss = raw × stop ≤ 캡 검사. 초과면 축소 제안.
+    al = account_loss_pct(raw, stop_loss_pct)
+    if al <= cap:
+        return WeightSuggestion(
+            WEIGHT_OK, raw, raw, al, cap,
+            f"phase {phase}/{band or 'single'} 비중 {raw:.2f}, account_loss {al:.4f} <= {cap:.4f}",
+        )
+    adjusted = cap / stop_loss_pct
+    al2 = account_loss_pct(adjusted, stop_loss_pct)
+    return WeightSuggestion(
+        WEIGHT_NEEDS_ADJUSTMENT, adjusted, raw, al2, cap,
+        f"원안 {raw:.2f}×stop {stop_loss_pct:.4f}={al:.4f} > {cap:.4f} → {adjusted:.4f}로 축소 제안",
+    )
 
 
 # --- hard-veto 종합 (헌법 RiskGate per-candidate 평가자) ---

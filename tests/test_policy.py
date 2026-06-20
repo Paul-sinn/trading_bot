@@ -12,17 +12,22 @@ import pytest
 from algorithms.goal_planner import SYSTEM_MAX_RISK_PCT
 from algorithms.regime import Regime
 from algorithms.policy import (
+    ConcentrationPhase,
+    ConcentrationPolicy,
     RiskCheck,
     RiskMode,
     TierEntry,
+    TierWeightCap,
     UniversePolicy,
     VetoInput,
     VetoResult,
+    WeightSuggestion,
     account_loss_pct,
     evaluate_hard_veto,
     evaluate_risk,
     is_candidate_eligible,
     mode_allows_symbol,
+    suggest_position_weight,
     tier_status,
 )
 
@@ -316,3 +321,134 @@ def test_vetoresult_is_frozen():
     assert isinstance(res, VetoResult)
     with pytest.raises(Exception):
         res.passed = False  # type: ignore[misc]
+
+
+# --- suggest_position_weight (Concentration Phase → position_weight 제안) ---
+
+
+def _concentration() -> ConcentrationPolicy:
+    """config/risk_profiles.json concentration_phases 구조를 반영한 픽스처."""
+    return ConcentrationPolicy(
+        phases=(
+            ConcentrationPhase(
+                "1", 1000, 3000, "concentrated",
+                {
+                    "tier_0_2": TierWeightCap(0.80, 1.00, None),
+                    "tier_3": TierWeightCap(0.70, 0.90, None),
+                    "tier_4A": TierWeightCap(0.60, 0.80, None),
+                    "tier_4B": TierWeightCap(0.50, 0.70, None),
+                    "tier_5": TierWeightCap(None, None, "small_only"),
+                    "tier_6": TierWeightCap(None, None, "conservative"),
+                },
+                None,
+            ),
+            ConcentrationPhase("2", 3000, 5000, None, {}, 0.60),
+            ConcentrationPhase("4", 10000, None, "portfolio", {}, None),
+        )
+    )
+
+
+def test_phase1_tier1_concentrated_ok():
+    s = suggest_position_weight("1", "1", _mode_b(), 0.05, _concentration())
+    assert s.status == "ok"
+    assert s.suggested_weight == pytest.approx(0.80)  # tier_0_2 하단
+    assert s.account_loss_at_suggested == pytest.approx(0.80 * 0.05)
+    assert s.account_loss_at_suggested <= s.account_loss_cap
+
+
+def test_phase1_tier4b_lower_cap_than_tier_0_2():
+    s_t1 = suggest_position_weight("1", "1", _mode_b(), 0.03, _concentration())
+    s_4b = suggest_position_weight("1", "4B", _mode_b(), 0.03, _concentration())
+    assert s_4b.status == "ok"
+    assert s_4b.suggested_weight == pytest.approx(0.50)
+    assert s_4b.suggested_weight < s_t1.suggested_weight  # 4B는 더 낮은 캡
+
+
+def test_tier5_never_gets_concentration():
+    for phase in ("1", "2", "4"):
+        s = suggest_position_weight(phase, "5", _mode_b(), 0.05, _concentration())
+        assert s.status == "small_only"
+        assert s.suggested_weight is None  # 집중 사이징 절대 안 줌
+
+
+def test_tier5_forbidden_under_c_mode():
+    # tier5_profile: no C mode → C에서 Tier5 거부(small_only도 아님).
+    s = suggest_position_weight("1", "5", _mode_c(), 0.05, _concentration())
+    assert s.status == "rejected"
+    assert s.suggested_weight is None
+
+
+def test_suggested_weight_reduced_when_risk_cap_violated():
+    # tier_0_2 raw 0.80 × stop 0.10 = 0.08 > 0.07(B) → 축소.
+    s = suggest_position_weight("1", "1", _mode_b(), 0.10, _concentration())
+    assert s.status == "needs_adjustment"
+    assert s.raw_weight == pytest.approx(0.80)
+    assert s.suggested_weight == pytest.approx(0.07 / 0.10)  # 0.70
+    assert s.account_loss_at_suggested <= s.account_loss_cap + 1e-9
+
+
+def test_c_mode_rejects_disallowed_tier():
+    # C.allowed_tiers = 0,1,2 → Tier3 거부.
+    s = suggest_position_weight("1", "3", _mode_c(), 0.04, _concentration())
+    assert s.status == "rejected"
+
+
+def test_c_mode_allows_tier1():
+    s = suggest_position_weight("1", "1", _mode_c(), 0.04, _concentration())
+    assert s.status == "ok"
+    assert s.account_loss_cap == 0.10  # C 캡
+
+
+def test_phase2_single_position_cap():
+    s = suggest_position_weight("2", "1", _mode_b(), 0.05, _concentration())
+    assert s.status == "ok"
+    assert s.suggested_weight == pytest.approx(0.60)  # main_pct 하단
+
+
+def test_phase4_portfolio_needs_manual():
+    s = suggest_position_weight("4", "1", _mode_b(), 0.05, _concentration())
+    assert s.status == "needs_adjustment"
+    assert s.suggested_weight is None
+
+
+def test_tier6_conservative_needs_adjustment():
+    s = suggest_position_weight("1", "6", _mode_b(), 0.05, _concentration())
+    assert s.status == "needs_adjustment"
+    assert s.suggested_weight is None
+
+
+def test_invalid_stop_rejected():
+    for stop in (0.0, -0.02, float("nan")):
+        s = suggest_position_weight("1", "1", _mode_b(), stop, _concentration())
+        assert s.status == "rejected"
+
+
+def test_unknown_phase_rejected():
+    s = suggest_position_weight("99", "1", _mode_b(), 0.05, _concentration())
+    assert s.status == "rejected"
+
+
+def test_suggested_weight_always_passes_account_loss_when_ok_or_adjusted():
+    conc = _concentration()
+    for phase in ("1", "2"):
+        for tier in ("1", "3", "4A", "4B"):
+            for stop in (0.03, 0.06, 0.10, 0.15):
+                for mode in (_mode_b(), _mode_c()):
+                    s = suggest_position_weight(phase, tier, mode, stop, conc)
+                    if s.status in ("ok", "needs_adjustment") and s.suggested_weight is not None:
+                        al = account_loss_pct(s.suggested_weight, stop)
+                        assert al <= mode.account_loss_cap + 1e-9
+
+
+def test_phase_for_equity_lookup():
+    conc = _concentration()
+    assert conc.phase_for_equity(2000).phase == "1"
+    assert conc.phase_for_equity(4000).phase == "2"
+    assert conc.phase_for_equity(50000).phase == "4"  # max None = 상한 없음
+
+
+def test_weight_suggestion_is_frozen():
+    s = suggest_position_weight("1", "1", _mode_b(), 0.05, _concentration())
+    assert isinstance(s, WeightSuggestion)
+    with pytest.raises(Exception):
+        s.status = "ok"  # type: ignore[misc]

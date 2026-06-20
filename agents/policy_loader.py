@@ -20,10 +20,13 @@ from pathlib import Path
 
 from algorithms.policy import (
     VALID_STATUSES,
+    ConcentrationPhase,
+    ConcentrationPolicy,
     Policy,
     PortfolioGuards,
     RiskMode,
     TierEntry,
+    TierWeightCap,
     UniversePolicy,
 )
 
@@ -176,6 +179,67 @@ def _build_guards(data: dict, path: Path) -> PortfolioGuards:
     )
 
 
+# --- concentration phases ---
+
+
+def _parse_tier_cap(value: object, where: str) -> TierWeightCap:
+    """deploy cap: [lo, hi](퍼센트) → 분수 range / "small_only" / 그 외 문자열 → conservative."""
+    if (
+        isinstance(value, list) and len(value) == 2
+        and all(isinstance(x, Real) and not isinstance(x, bool) for x in value)
+    ):
+        return TierWeightCap(float(value[0]) / 100.0, float(value[1]) / 100.0, None)
+    if value == "small_only":
+        return TierWeightCap(None, None, "small_only")
+    if isinstance(value, str):
+        return TierWeightCap(None, None, "conservative")
+    raise PolicyConfigError(f"deploy cap 형식 오류(숫자쌍/문자열 아님): {where} = {value!r}")
+
+
+def _build_concentration(data: dict, path: Path) -> ConcentrationPolicy:
+    cp = data.get("concentration_phases")
+    if cp is None:
+        return ConcentrationPolicy(())  # 선택적 — 없으면 빈 정책.
+    _require(isinstance(cp, dict), f"concentration_phases object 아님: {path}")
+
+    phases: list[ConcentrationPhase] = []
+    for name, ph in cp.items():
+        where = f"{path.name}.concentration_phases.{name}"
+        _require(isinstance(ph, dict), f"phase object 아님: {where}")
+        usd = ph.get("account_usd", [0, None])
+        _require(isinstance(usd, list) and len(usd) == 2, f"account_usd는 [min,max]: {where}")
+        usd_min = _num(usd[0], f"{where}.account_usd[0]")
+        usd_max = None if usd[1] is None else _num(usd[1], f"{where}.account_usd[1]")
+
+        tier_caps: dict[str, TierWeightCap] = {}
+        dc = ph.get("deploy_caps_pct")
+        if dc is not None:
+            _require(isinstance(dc, dict), f"deploy_caps_pct object 아님: {where}")
+            for band, val in dc.items():
+                tier_caps[band] = _parse_tier_cap(val, f"{where}.deploy_caps_pct.{band}")
+
+        single_low = None
+        main = ph.get("main_pct")
+        if main is not None:
+            _require(
+                isinstance(main, list) and len(main) == 2,
+                f"main_pct는 [lo,hi]: {where}",
+            )
+            single_low = _num(main[0], f"{where}.main_pct[0]") / 100.0
+
+        phases.append(
+            ConcentrationPhase(
+                phase=name,
+                account_usd_min=usd_min,
+                account_usd_max=usd_max,
+                mode=ph.get("mode"),
+                tier_caps=tier_caps,
+                single_position_low=single_low,
+            )
+        )
+    return ConcentrationPolicy(tuple(phases))
+
+
 # --- 공개 진입점 ---
 
 
@@ -197,4 +261,5 @@ def load_policy(config_dir: str | Path | None = None) -> Policy:
         universe=_build_universe(universe_data, universe_path),
         risk_modes=_build_risk_modes(risk_data, risk_path),
         portfolio_guards=_build_guards(risk_data, risk_path),
+        concentration=_build_concentration(risk_data, risk_path),
     )

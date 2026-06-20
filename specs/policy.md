@@ -155,10 +155,59 @@ class VetoResult:
 `data_missing`(미확정 TODO)이라 비활성. 미설정 정책 노브를 per-candidate에서 막아 모든 거래를 영구
 veto하지 않는다(설정되면 RiskAgent 레이어에서 강제).
 
+## Concentration Phase → position_weight 제안 (정책 기반)
+
+계좌 phase·tier·리스크 모드·집중 규칙·소액전용 규칙으로 **position_weight를 제안**한다. ⚠️ 제안일 뿐
+거래 허가가 아니다 — 제안 weight도 이후 hard-veto/evaluate_risk(account_loss = weight × stop ≤ 모드캡)를
+통과해야 한다. 위반하면 축소 제안(needs_adjustment)하거나 거부(rejected).
+
+데이터: `config/risk_profiles.json.concentration_phases`. **Phase 1만 per-tier 캡(deploy_caps_pct) 정의**,
+Phase 2~3은 단일포지션 캡(main_pct), Phase 4는 portfolio(per-position 캡 미정의). 발명 금지 — config에
+없는 수치는 needs_adjustment로 표시.
+
+```python
+@dataclass(frozen=True)
+class TierWeightCap:           # 한 티어밴드 배치 캡(분수). special 있으면 range 무시
+    low: float | None; high: float | None; special: str | None  # "small_only"|"conservative"|None
+@dataclass(frozen=True)
+class ConcentrationPhase:
+    phase: str; account_usd_min: float; account_usd_max: float | None
+    mode: str | None; tier_caps: dict[str, TierWeightCap]; single_position_low: float | None
+@dataclass(frozen=True)
+class ConcentrationPolicy:
+    phases: tuple[ConcentrationPhase, ...]
+    def phase(name) -> ConcentrationPhase | None
+    def phase_for_equity(equity) -> ConcentrationPhase | None
+@dataclass(frozen=True)
+class WeightSuggestion:
+    status: str                # ok | needs_adjustment | rejected | small_only
+    suggested_weight: float | None
+    raw_weight: float | None
+    account_loss_at_suggested: float | None
+    account_loss_cap: float
+    reason: str
+```
+
+### `suggest_position_weight(phase, primary_tier, mode, stop_loss_pct, concentration) -> WeightSuggestion`
+순서(fail-closed):
+1. `primary_tier ∉ mode.allowed_tiers` → **rejected**(C-mode 제한 등 — 정책 허용 티어만).
+2. `primary_tier == "5"` → **small_only**(모든 phase에서 concentration 금지, suggested None — 수동 소액).
+   tier5 exposure cap은 config에서 data_missing.
+3. phase 미정의 → rejected.
+4. 티어밴드 캡: Phase1은 `tier_caps[band].low`(보수적 하단). special `small_only`→small_only,
+   `conservative`(Tier6)→needs_adjustment(수동). per-tier 없고 `single_position_low` 있으면(Phase2~3)
+   그 값. 둘 다 없으면(Phase4)→needs_adjustment(포트폴리오 수동).
+5. `stop_loss_pct <= 0`/NaN → rejected.
+6. `account_loss = raw × stop`: `≤ cap`이면 **ok**(suggested=raw). `> cap`이면 **needs_adjustment**
+   (suggested = `cap / stop` 로 축소 — account_loss 정확히 캡에 맞춤).
+
+티어밴드 매핑: 0/1/2→tier_0_2, 3→tier_3, 4A→tier_4A, **4B→tier_4B(더 낮은 캡)**, 5→tier_5, 6→tier_6.
+C-mode Tier2 화이트리스트(심볼레벨)는 여기서 안 본다 — hard-veto(mode_allows_symbol)가 담당(중복 금지).
+
 ## 비범위 (이 step에서 하지 않음 — 후속 step)
-- JSON 로더(`config/*.json` → 모델). ✅ step 2.
+- JSON 로더(`config/*.json` → 모델). ✅ step 2(+ 이번에 concentration 파싱 추가).
 - sizing→불변식 분수 브리지. ✅ step 3.
-- Concentration Phase 캡 → position_weight 제안 로직. (evaluate_risk/veto는 weight를 입력으로만 받는다.)
-- dry-run 리포트 객체/빌더. step 5.
+- dry-run 리포트 객체/빌더. ✅ step 5.
+- 체결/슬리피지 시뮬, Phase4 포트폴리오 per-position 사이징(수치 일부 data_missing).
 - hard-veto를 주문 전 경로/`check_risk_gate`에 라이브 배선. (실행 범위 밖)
 - 실주문/브로커/실행/전략 시그널/사이징 수치. (불변)

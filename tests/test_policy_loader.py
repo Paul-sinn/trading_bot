@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from algorithms.policy import (
+    ConcentrationPolicy,
     Policy,
     PortfolioGuards,
     RiskMode,
@@ -220,3 +221,52 @@ def test_load_real_repo_config():
     assert len(c.tier2_whitelist) == 7
     assert policy.portfolio_guards.mdd_hard_stop_pct == 0.20
     assert policy.portfolio_guards.daily_loss_limit_pct is None  # data_missing
+
+
+# --- concentration_phases 파싱 ---
+
+
+def test_concentration_optional_when_missing(tmp_path):
+    # 최소 config(_good_risk엔 concentration_phases 없음) → 빈 ConcentrationPolicy(로드 성공).
+    cfg = _write_config(tmp_path, _good_universe(), _good_risk())
+    conc = load_policy(cfg).concentration
+    assert isinstance(conc, ConcentrationPolicy)
+    assert conc.phases == ()
+
+
+def test_concentration_parsed_from_config(tmp_path):
+    risk = _good_risk()
+    risk["concentration_phases"] = {
+        "1": {"account_usd": [1000, 3000], "mode": "concentrated",
+              "deploy_caps_pct": {"tier_0_2": [80, 100], "tier_4B": [50, 70],
+                                  "tier_5": "small_only", "tier_6": "conservative_per_tier_2_or_5"}},
+        "2": {"account_usd": [3000, 5000], "main_pct": [60, 80]},
+    }
+    cfg = _write_config(tmp_path, _good_universe(), risk)
+    conc = load_policy(cfg).concentration
+    p1 = conc.phase("1")
+    assert p1.tier_caps["tier_0_2"].low == pytest.approx(0.80)
+    assert p1.tier_caps["tier_4B"].low == pytest.approx(0.50)   # 더 낮은 캡
+    assert p1.tier_caps["tier_5"].special == "small_only"
+    assert p1.tier_caps["tier_6"].special == "conservative"
+    assert conc.phase("2").single_position_low == pytest.approx(0.60)
+
+
+def test_real_config_concentration_has_phase1_tiers():
+    conc = load_policy(REAL_CONFIG).concentration
+    p1 = conc.phase("1")
+    assert p1 is not None
+    assert p1.tier_caps["tier_5"].special == "small_only"   # Tier5 집중 금지
+    assert p1.tier_caps["tier_4B"].low < p1.tier_caps["tier_0_2"].low  # 4B 더 낮음
+
+
+def test_bad_deploy_cap_raises(tmp_path):
+    risk = _good_risk()
+    risk["concentration_phases"] = {
+        "1": {"account_usd": [1000, 3000], "deploy_caps_pct": {"tier_0_2": "nonsense_value"}},
+    }
+    # "small_only"/"conservative" 외 임의 문자열은 conservative로 흡수되지만, 숫자도 문자열도 아닌 형식은 거부.
+    risk["concentration_phases"]["1"]["deploy_caps_pct"]["tier_3"] = {"bad": "dict"}
+    cfg = _write_config(tmp_path, _good_universe(), risk)
+    with pytest.raises(PolicyConfigError):
+        load_policy(cfg)
