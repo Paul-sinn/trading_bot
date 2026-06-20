@@ -73,8 +73,10 @@ async def run_phase1_multiday(
     day_results: list[Phase1Result] = []
     day_exits: list[tuple[ExitResult, ...]] = []
     for day in days:
-        # entry 흐름 전에 청산 평가·적용(청산이 현금을 풀어 그날 신규 진입에 쓰일 수 있게). 그날 종가 사용.
+        # 1) 그날 종가로 trailing_high 갱신(상승 시만) → 트레일링 스탑이 갱신된 고점을 쓴다.
         prices = day.mark_prices or {}
+        portfolio.update_trailing_highs(prices)
+        # 2) entry 흐름 전에 청산 평가·적용(청산이 현금을 풀어 그날 신규 진입에 쓰일 수 있게).
         exit_results = tuple(
             apply_exit(portfolio, sym, price=prices.get(sym), params=params)
             for sym, params in day.exits.items()

@@ -60,9 +60,16 @@ class ExitResult:
 - 부분 청산 시 잔여 포지션의 평단은 그대로 유지(매도는 평단 불변). 실현 PnL/현금/매매로그 갱신.
   잔여 주식의 미실현 PnL은 이후 mark-to-market 스냅샷이 종가로 반영(보존).
 
+## 자동 trailing-high 추적
+- `SimulatedPosition.trailing_high`: 진입가에서 시작, 일별 종가로 **단조 증가**(절대 하락 안 함).
+- `SimulatedPortfolio.update_trailing_highs(prices) -> 결측심볼 tuple`: 가격 결측/무효(없음/NaN/≤0)면
+  갱신 안 하고 해당 심볼 반환(fail-closed).
+- `apply_exit`은 `trail_pct`만 주어지고 명시 `trailing_high`가 없으면 포지션의 추적 `trailing_high`를 쓴다.
+
 ## multiday 통합
-- `DayInput.exits: dict[symbol, ExitParams]`. 매일 entry 흐름 **전에** day.mark_prices로 청산 평가·적용
-  (청산이 현금을 풀어 그날 신규 진입에 쓰일 수 있게). `MultiDayResult.day_exits`로 일별 청산 결과 노출.
+- `DayInput.exits: dict[symbol, ExitParams]`. 매일 **① update_trailing_highs(종가) → ② entry 흐름 전 청산
+  평가·적용** 순서(트레일링 스탑이 그날 갱신된 고점을 쓰고, 청산이 현금을 풀어 신규 진입에 쓰이게).
+  `MultiDayResult.day_exits`로 일별 청산 결과 노출.
 
 ## 테스트
 - 스탑/트레일 청산, 부분/전량 청산의 현금·실현PnL, 잔여 평단 유지, 가격 결측 안전, real orders 0.

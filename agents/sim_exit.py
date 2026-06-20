@@ -13,7 +13,7 @@ spec: specs/sim_exit.md
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -115,7 +115,12 @@ def apply_exit(
     if pos is None:
         return ExitResult(False, None, 0, 0.0, False, None, f"{symbol}: 포지션 없음")
 
-    decision = evaluate_exit(price=price, shares_held=pos.shares, params=params)
+    # 트레일링 스탑은 포지션이 추적하는 trailing_high를 쓴다(명시 trailing_high 없을 때).
+    effective = params
+    if params.trail_pct is not None and params.trailing_high is None and pos.trailing_high is not None:
+        effective = replace(params, trailing_high=pos.trailing_high)
+
+    decision = evaluate_exit(price=price, shares_held=pos.shares, params=effective)
     if decision.data_missing:
         return ExitResult(False, None, 0, 0.0, True, None, f"{symbol}: 가격 결측 → fail-closed(미청산)")
     if not decision.should_exit:

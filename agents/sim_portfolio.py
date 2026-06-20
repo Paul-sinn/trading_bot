@@ -11,6 +11,7 @@ spec: specs/sim_portfolio.md
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -22,12 +23,13 @@ _EPS = 1e-9
 
 @dataclass(frozen=True)
 class SimulatedPosition:
-    """시뮬 보유 포지션."""
+    """시뮬 보유 포지션. trailing_high는 진입 이후 일별 종가로 갱신되는 최고가(트레일링 스탑용)."""
 
     symbol: str
     shares: int
     avg_entry_price: float
     tier: str | None = None
+    trailing_high: float | None = None
 
     @property
     def cost_basis(self) -> float:
@@ -178,6 +180,26 @@ class SimulatedPortfolio:
             data_missing=data_missing,
         )
 
+    def update_trailing_highs(self, prices: dict[str, float] | None) -> tuple[str, ...]:
+        """일별 종가로 각 보유 포지션의 trailing_high를 갱신한다(상승 시만 — 절대 하락 안 함).
+
+        가격이 결측/무효(없음/NaN/≤0)인 포지션은 갱신하지 않고 그 심볼을 반환한다(fail-closed).
+        """
+        prices = prices or {}
+        missing: list[str] = []
+        for sym, pos in list(self._positions.items()):
+            price = prices.get(sym)
+            if price is None or math.isnan(price) or price <= 0:
+                missing.append(sym)
+                continue
+            base = pos.trailing_high if pos.trailing_high is not None else pos.avg_entry_price
+            new_high = max(base, price)  # 단조 증가 — 하락 가격은 무시.
+            if pos.trailing_high is None or new_high > pos.trailing_high:
+                self._positions[sym] = SimulatedPosition(
+                    sym, pos.shares, pos.avg_entry_price, pos.tier, trailing_high=new_high
+                )
+        return tuple(missing)
+
     # --- 체결 적용 ---
 
     def apply_buy_fill(self, fill: "SimulatedFill", *, tier: str | None = None) -> ApplyResult:
@@ -234,9 +256,11 @@ class SimulatedPortfolio:
                     None,
                 )
 
-        # 통과 → 커밋.
+        # 통과 → 커밋. trailing_high는 진입가에서 시작(기존이 있으면 더 높은 값 유지).
+        prev_high = existing.trailing_high if (existing and existing.trailing_high is not None) else None
+        new_high = price if prev_high is None else max(prev_high, price)
         self._cash = prospective_cash
-        self._positions[symbol] = SimulatedPosition(symbol, new_shares, new_avg, tier)
+        self._positions[symbol] = SimulatedPosition(symbol, new_shares, new_avg, tier, trailing_high=new_high)
         trade = TradeRecord(
             symbol=symbol, side="buy", shares=shares, price=price, notional=notional,
             cash_after=self._cash, realized_pnl=0.0,
@@ -260,7 +284,7 @@ class SimulatedPortfolio:
             del self._positions[symbol]
         else:
             self._positions[symbol] = SimulatedPosition(
-                symbol, remaining, pos.avg_entry_price, pos.tier
+                symbol, remaining, pos.avg_entry_price, pos.tier, trailing_high=pos.trailing_high
             )
         trade = TradeRecord(
             symbol=symbol, side="sell", shares=shares, price=price,
