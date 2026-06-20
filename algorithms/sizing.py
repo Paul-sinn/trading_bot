@@ -129,6 +129,42 @@ def risk_appetite_weight(appetite: float) -> float:
 # --- 최종 수량 (순수) ---
 
 
+# --- 헌법 account-risk 브리지 (순수) ---
+# position_size 출력(달러)을 policy.evaluate_risk가 쓰는 분수 입력으로 변환한다. policy를 import하지
+# 않는다(무순환). 무효 계좌/입력은 inf 반환 → evaluate_risk 캡 비교에서 자동 veto(fail-closed).
+
+
+def per_trade_risk_pct(risk_amount: float, account_equity: float) -> float:
+    """1회 매매 리스크 비율 = risk_amount / account_equity (분수). 불변식①(≤ 0.05) 입력.
+
+    account_equity <= 0(무효 계좌) → inf(fail-closed — 0.0으로 안전한 척 하지 않는다).
+    """
+    if account_equity <= 0:
+        return float("inf")
+    return risk_amount / account_equity
+
+
+def position_weight(quantity: float, entry_price: float, account_equity: float) -> float:
+    """포지션 시장가치가 계좌에서 차지하는 비중 = (quantity × entry_price) / account_equity (분수).
+
+    account_equity <= 0 → inf(fail-closed).
+    """
+    if account_equity <= 0:
+        return float("inf")
+    return (quantity * entry_price) / account_equity
+
+
+def stop_loss_pct(entry_price: float, stop_loss: float) -> float:
+    """스탑 도달 시 포지션 손실률 = (entry_price - stop_loss) / entry_price (분수).
+
+    account_loss = position_weight × stop_loss_pct(불변식②) 입력. entry_price <= 0 → inf(fail-closed).
+    stop >= entry(무효 스탑)면 <= 0 → 이후 evaluate_risk가 음수를 veto.
+    """
+    if entry_price <= 0:
+        return float("inf")
+    return (entry_price - stop_loss) / entry_price
+
+
 def position_size(
     account_equity: float,
     entry_price: float,

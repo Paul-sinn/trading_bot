@@ -16,9 +16,12 @@ from algorithms.sizing import (
     PositionPlan,
     effective_kelly_fraction,
     kelly_fraction,
+    per_trade_risk_pct,
     position_size,
+    position_weight,
     regime_adjusted_fraction,
     risk_appetite_weight,
+    stop_loss_pct,
     stop_loss_price,
 )
 
@@ -232,6 +235,61 @@ def test_position_size_stop_above_entry_zero_qty():
     p = position_size(10000, 100, 110, 0.02, 0.25, 1.0)
     assert p.quantity == 0
     assert p.risk_amount == 0.0
+
+
+# --- 헌법 account-risk 브리지 (policy.evaluate_risk 입력 변환) ---
+
+
+def test_per_trade_risk_pct_basic():
+    # risk_amount 200 / equity 10000 = 0.02.
+    assert per_trade_risk_pct(200.0, 10000.0) == pytest.approx(0.02)
+
+
+def test_per_trade_risk_pct_invalid_equity_fail_closed():
+    # equity<=0 → inf(이후 evaluate_risk에서 자동 veto). 0.0으로 안전한 척 안 함.
+    assert per_trade_risk_pct(200.0, 0.0) == math.inf
+    assert per_trade_risk_pct(200.0, -5.0) == math.inf
+
+
+def test_position_weight_basic():
+    # 50주 × 100 / 10000 = 0.5.
+    assert position_weight(50, 100.0, 10000.0) == pytest.approx(0.5)
+    assert position_weight(0, 100.0, 10000.0) == 0.0
+
+
+def test_position_weight_invalid_equity_fail_closed():
+    assert position_weight(50, 100.0, 0.0) == math.inf
+    assert position_weight(50, 100.0, -1.0) == math.inf
+
+
+def test_stop_loss_pct_basic():
+    # (100 - 95)/100 = 0.05.
+    assert stop_loss_pct(100.0, 95.0) == pytest.approx(0.05)
+
+
+def test_stop_loss_pct_invalid_entry_fail_closed():
+    assert stop_loss_pct(0.0, 95.0) == math.inf
+    assert stop_loss_pct(-10.0, 95.0) == math.inf
+
+
+def test_stop_loss_pct_stop_at_or_above_entry_non_positive():
+    # 무효 스탑(stop>=entry) → <=0. evaluate_risk가 음수면 fail-closed로 막는다.
+    assert stop_loss_pct(100.0, 100.0) == 0.0
+    assert stop_loss_pct(100.0, 110.0) < 0
+
+
+def test_bridge_composes_with_position_size_into_fractions():
+    # sizing 출력 → 분수 3종이 헌법 불변식 입력으로 일관되게 연결되는지(통합).
+    equity, entry = 100000.0, 100.0
+    p = position_size(equity, entry, 95.0, 0.02, 0.25, 1.0)
+    ptr = per_trade_risk_pct(p.risk_amount, equity)
+    pw = position_weight(p.quantity, entry, equity)
+    slp = stop_loss_pct(entry, p.stop_loss)
+    assert 0.0 <= ptr <= 0.02 + 1e-6          # per-trade는 max_risk_pct 이내(ADR-003)
+    assert 0.0 < pw <= 1.0
+    assert slp == pytest.approx(0.05)
+    # account_loss = weight × stop_pct 로 헌법 불변식②와 같은 양이 나온다.
+    assert pw * slp == pytest.approx(position_weight(p.quantity, entry, equity) * slp)
 
 
 def test_position_size_insufficient_equity_zero_qty():

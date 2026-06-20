@@ -93,3 +93,32 @@ class PositionPlan:
   max_risk_pct↑ → MDD·총수익 단조 증가하되 20% 천장 안에서.
 - ⚠️ **편향 데이터 과튜닝 금지**: 기본 max_risk_pct는 보수적 유지(0.01). 공격적 값은 calibrate 제안 + 재실행으로
   시연하되 **확정은 편향 없는 데이터(B단계)**. base_fraction은 콜드스타트 고정비율(1.0=예산 풀사용)로 유지.
+
+---
+
+## 헌법 account-risk 브리지 (policy enforcement 연결)
+
+`position_size`의 출력(달러 단위 수량·`risk_amount`)을 헌법 두 리스크 불변식(`algorithms.policy.evaluate_risk`)이
+소비하는 **분수 입력**으로 변환하는 순수 헬퍼. sizing이 포지션 수학의 단일 진실이므로 여기서 파생한다(policy는
+평가만 — 중복 계산 안 함). 이 헬퍼들은 policy를 import하지 않는다(순수·무순환).
+
+CRITICAL (fail-closed): `account_equity <= 0`·`entry_price <= 0`은 무효 계좌/입력 → `inf` 반환. `inf`는 이후
+`evaluate_risk`의 캡 비교에서 자동으로 veto된다(0.0을 돌려 "안전해 보이게" 만들지 않는다). `agents/risk.py`의
+`current_loss_ratio`가 `total_equity<=0`에 `inf`를 쓰는 것과 동일한 패턴.
+
+### `per_trade_risk_pct(risk_amount, account_equity) -> float`
+- `= risk_amount / account_equity` (분수). 불변식①(≤ SYSTEM_MAX_RISK_PCT 0.05) 입력.
+- `account_equity <= 0` → `inf`(fail-closed).
+
+### `position_weight(quantity, entry_price, account_equity) -> float`
+- `= (quantity × entry_price) / account_equity` (분수). 포지션이 계좌에서 차지하는 비중.
+- `account_equity <= 0` → `inf`(fail-closed).
+
+### `stop_loss_pct(entry_price, stop_loss) -> float`
+- `= (entry_price - stop_loss) / entry_price` (분수). 스탑 도달 시 포지션 손실률.
+  `account_loss_pct = position_weight × stop_loss_pct` (불변식②) 입력.
+- `entry_price <= 0` → `inf`(fail-closed). stop ≥ entry(무효 스탑)면 ≤ 0 → 이후 evaluate_risk가 veto.
+
+### 비범위
+- 이 헬퍼는 분수 변환만. 두 불변식 판정·veto는 `algorithms.policy.evaluate_risk`(단일 진실).
+- position_weight 자체의 제안(Concentration Phase 캡)·실주문은 후속 step.
