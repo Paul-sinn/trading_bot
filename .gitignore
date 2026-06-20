@@ -19,6 +19,9 @@ venv/
 data/
 *.parquet
 
+# 시뮬 생성 산출물 (run_sim 성과·진단 리포트 — 재생성 가능, 커밋 금지)
+reports/
+
 # phase execution outputs
 phases/**/phase*-output.json
 phases/**/step*-output.json

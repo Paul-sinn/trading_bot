@@ -41,6 +41,7 @@ from agents.norgate_bridge import DataAdapterError, load_norgate_folder
 from agents.perf_report import format_performance_report
 from agents.policy_loader import load_policy
 from agents.price_csv import close_series
+from agents.trade_diagnostics import compute_trade_diagnostics, format_trade_diagnostics
 from algorithms.sizing import ShareMode
 
 _COMPASS_SYMBOL = "SPY"   # 레짐/컴퍼스 고정 심볼.
@@ -148,6 +149,24 @@ def simulate(args) -> HistoricalResult:
     ))
 
 
+def _final_marks(args, result) -> dict[str, float]:
+    """미청산 포지션의 미실현 pnl 진단용 마지막 종가(읽기 전용). 결측 심볼은 건너뜀(fail-closed)."""
+    open_syms = list(result.portfolio.positions)
+    if not open_syms:
+        return {}
+    try:
+        data = load_norgate_folder(args.data_root)
+    except DataAdapterError:
+        return {}
+    marks: dict[str, float] = {}
+    for sym in open_syms:
+        try:
+            marks[sym] = float(close_series(data, sym).iloc[-1])
+        except (DataAdapterError, IndexError, ValueError):
+            continue  # 마크 결측 → 해당 포지션은 미실현 n/a(가짜 손익 금지).
+    return marks
+
+
 def run(args) -> int:
     """CLI 실행: 시뮬 → 리포트 출력/저장. 데이터 문제는 exit code 2(fail-closed)."""
     try:
@@ -156,9 +175,13 @@ def run(args) -> int:
         print(f"[데이터 오류] {exc}", file=sys.stderr)
         raise SystemExit(2) from exc
 
-    report_text = format_performance_report(result.performance)
+    perf_text = format_performance_report(result.performance)
+    diag = compute_trade_diagnostics(result.multiday, final_prices=_final_marks(args, result))
+    diag_text = format_trade_diagnostics(diag)
+    report_text = perf_text + "\n\n" + diag_text
+
     print(report_text)
-    print(f"  (실주문 0 확인: {result.real_orders_placed})")
+    print(f"  (실주문 0 확인: {result.real_orders_placed} / {diag.real_orders_placed})")
 
     if args.output:
         out = Path(args.output)
