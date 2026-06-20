@@ -35,6 +35,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from agents.event_calendar import EventCalendarError, EventCalendarProvider
 from agents.evidence import EvidenceParams, MockEventRiskProvider
 from agents.historical_sim import HistoricalResult, run_historical_simulation
 from agents.norgate_bridge import DataAdapterError, load_norgate_folder
@@ -72,9 +73,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--trailing-stop-pct", type=float, default=None, help="추적 고점 대비 청산 비율(예: 0.15)")
     p.add_argument("--max-holding-days", type=int, default=None, help="보유 일수 도달 시 시간청산")
     p.add_argument("--manual-exit-date", default=None, help="해당 날짜(YYYY-MM-DD)에 전량 청산")
+    p.add_argument("--events-csv", default=None, help="이벤트 캘린더 CSV(date,event_type,ticker,severity,notes)")
     p.add_argument(
         "--assume-no-events", action="store_true",
-        help="드라이런 편의: 이벤트 리스크 없음 가정(Mock). 기본 off면 이벤트 게이트 fail-closed. 실 캘린더 아님.",
+        help="개발 바이패스 전용: 이벤트 리스크 없음 가정(Mock). 실 캘린더 아님. --events-csv가 우선.",
     )
     p.add_argument("--output", default=None, help="성과 리포트 저장 경로(UTF-8). 콘솔에도 항상 출력.")
     return p
@@ -104,6 +106,23 @@ def _resolve_trading_days(index, start, end, warmup):
             "거래일 0개 — start/end 범위나 warmup을 확인하라(데이터 구간 밖일 수 있음)."
         )
     return days
+
+
+def _resolve_event_provider(args):
+    """이벤트 provider 결정(fail-closed). --events-csv 우선, 없으면 --assume-no-events 바이패스.
+
+    둘 다 없으면 이벤트 확인 불가 → DataAdapterError(exit 2). 라이브 API 미연결 — CSV/Mock만.
+    """
+    if args.events_csv:
+        try:
+            return EventCalendarProvider.from_csv(args.events_csv)
+        except EventCalendarError as exc:
+            raise DataAdapterError(f"이벤트 캘린더 오류: {exc}") from exc
+    if args.assume_no_events:
+        return MockEventRiskProvider(default=True)  # 개발 바이패스 전용.
+    raise DataAdapterError(
+        "이벤트 데이터 필요: --events-csv <경로> 또는 (개발 바이패스) --assume-no-events 를 지정하라."
+    )
 
 
 def _build_exit_policy(args) -> ExitPolicy | None:
@@ -158,7 +177,7 @@ def simulate(args) -> HistoricalResult:
     end = _parse_date(args.end_date, "--end-date")
     trading_days = _resolve_trading_days(spy.index, start, end, args.warmup)
 
-    event_provider = MockEventRiskProvider(default=True) if args.assume_no_events else None
+    event_provider = _resolve_event_provider(args)
     share_mode = ShareMode(args.share_mode)
     exit_policy = _build_exit_policy(args)
 

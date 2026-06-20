@@ -39,19 +39,22 @@ _INF = float("inf")
 
 @runtime_checkable
 class EventRiskProvider(Protocol):
-    """고임팩트 이벤트(earnings/FOMC/CPI) 확인 인터페이스. is_clear=True면 이벤트 리스크 점검됨/없음."""
+    """고임팩트 이벤트(earnings/FOMC/CPI) 확인 인터페이스. is_clear=True면 이벤트 리스크 점검됨/없음.
 
-    def is_clear(self, symbol: str) -> bool: ...
+    as_of(선택)는 날짜 인지 provider(캘린더)용 — 그날 기준으로 확인한다. 무시해도 된다(Mock).
+    """
+
+    def is_clear(self, symbol: str, as_of=None) -> bool: ...
 
 
 class MockEventRiskProvider:
-    """결정론적 이벤트 provider. default=False = fail-closed(캘린더 없으면 미확인 → veto)."""
+    """결정론적 이벤트 provider. default=False = fail-closed(캘린더 없으면 미확인 → veto). as_of 무시."""
 
     def __init__(self, mapping: dict[str, bool] | None = None, default: bool = False) -> None:
         self._mapping = dict(mapping or {})
         self._default = default
 
-    def is_clear(self, symbol: str) -> bool:
+    def is_clear(self, symbol: str, as_of=None) -> bool:
         return self._mapping.get(symbol, self._default)
 
 
@@ -186,7 +189,9 @@ def build_candidate_context(
     liquidity_ok = (
         data_ok and _avg_dollar_volume(df, params.adv_lookback) >= params.min_dollar_volume
     )
-    event_ok = bool(event_provider.is_clear(symbol)) if event_provider is not None else False
+    # 날짜 인지 캘린더용 as_of = point-in-time df의 마지막 날짜(미래참조 없음).
+    as_of = df.index[-1] if (df is not None and len(df) > 0) else None
+    event_ok = bool(event_provider.is_clear(symbol, as_of)) if event_provider is not None else False
 
     return CandidateContext(
         stop_loss_pct=stop_pct,
