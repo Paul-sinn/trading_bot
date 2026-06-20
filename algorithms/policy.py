@@ -91,6 +91,34 @@ class RiskCheck:
     reason: str
 
 
+@dataclass(frozen=True)
+class PortfolioGuards:
+    """포트폴리오 가드(헌법 §6). 미정 한도는 None(헌법 data_missing — 후속 hard-veto가 차단으로 해석)."""
+
+    mdd_hard_stop_pct: float                  # 불변 0.20
+    daily_loss_limit_pct: float | None        # "data_missing" → None
+    weekly_loss_limit_pct: float | None
+    consecutive_loss_limit_count: int | None
+
+
+@dataclass(frozen=True)
+class Policy:
+    """집계 정책 — 로더가 config/*.json 에서 빌드한다. 순수 컨테이너(I/O 없음)."""
+
+    universe: UniversePolicy
+    risk_modes: tuple[RiskMode, ...]
+    portfolio_guards: PortfolioGuards
+
+    def mode(self, name: str) -> RiskMode | None:
+        """이름으로 리스크 모드 조회. 없으면 None."""
+        return next((m for m in self.risk_modes if m.name == name), None)
+
+    @property
+    def default_mode(self) -> RiskMode | None:
+        """default=True 모드(헌법 기본 B). 없으면 None."""
+        return next((m for m in self.risk_modes if m.default), None)
+
+
 # --- 순수 평가 함수 ---
 
 
