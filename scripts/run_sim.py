@@ -52,6 +52,10 @@ from agents.feature_shadow_score import (
     compute_feature_shadow_score,
     format_feature_shadow_score,
 )
+from agents.shadow_bucket_analysis import (
+    compute_shadow_bucket_analysis,
+    format_shadow_bucket_analysis,
+)
 from agents.historical_sim import HistoricalResult, run_historical_simulation
 from agents.norgate_bridge import DataAdapterError, load_norgate_folder
 from agents.perf_report import format_performance_report
@@ -287,6 +291,10 @@ def run(args) -> int:
     # 피처 섀도 스코어(랭킹 분리력 사후 평가). 측정 전용 — 매매에 미사용.
     shadow = compute_feature_shadow_score(diag, feat_diag)
     sections.append(format_feature_shadow_score(shadow))
+
+    # 섀도 스코어 버킷 분석(고점수 버킷이 더 좋은 성과인지). 측정 전용 — 매매에 미사용.
+    buckets = compute_shadow_bucket_analysis(diag, shadow)
+    sections.append(format_shadow_bucket_analysis(buckets))
 
     # events-csv 사용 시: 이벤트 영향 진단(차단된 후보). 측정 전용.
     if isinstance(event_provider, EventCalendarProvider):
