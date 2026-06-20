@@ -51,6 +51,7 @@ class TradeRecord:
     notional: float
     cash_after: float
     realized_pnl: float
+    exit_reason: str | None = None
     note: str = "SIMULATED — no broker / no live order"
 
 
@@ -243,8 +244,10 @@ class SimulatedPortfolio:
         self._trade_log.append(trade)
         return ApplyResult(True, "applied", trade)
 
-    def apply_sell_fill(self, symbol: str, shares: int, price: float) -> ApplyResult:
-        """매도 체결을 적용한다(실현 PnL 추적 — 완전성용, sim_execution 미배선)."""
+    def apply_sell_fill(
+        self, symbol: str, shares: int, price: float, *, exit_reason: str | None = None
+    ) -> ApplyResult:
+        """매도 체결을 적용한다(실현 PnL 추적). 부분 매도 시 잔여 평단은 유지된다."""
         pos = self._positions.get(symbol)
         if pos is None or shares <= 0 or shares > pos.shares:
             return ApplyResult(False, f"{symbol}: 매도 불가(보유 부족/무효 수량)", None)
@@ -262,6 +265,7 @@ class SimulatedPortfolio:
         trade = TradeRecord(
             symbol=symbol, side="sell", shares=shares, price=price,
             notional=shares * price, cash_after=self._cash, realized_pnl=realized,
+            exit_reason=exit_reason,
         )
         self._trade_log.append(trade)
         return ApplyResult(True, "applied", trade)

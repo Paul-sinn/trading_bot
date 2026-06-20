@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 
 from agents.decision import MockDecisionProvider
 from agents.phase1_flow import CandidateContext, Phase1Result, run_phase1_dry_run
+from agents.sim_exit import ExitParams, ExitResult, apply_exit
 from agents.sim_portfolio import PortfolioSnapshot, SimulatedPortfolio, TradeRecord
 
 
@@ -31,6 +32,7 @@ class DayInput:
     risk_mode_name: str = "B"
     decision_provider: object | None = None
     mark_prices: dict[str, float] | None = None  # 그날 종가(mark-to-market). 없으면 cost_basis + data_missing.
+    exits: dict[str, ExitParams] = field(default_factory=dict)  # 그날 청산 평가할 보유 심볼별 파라미터.
 
 
 @dataclass(frozen=True)
@@ -39,6 +41,7 @@ class MultiDayResult:
 
     day_results: tuple[Phase1Result, ...]
     portfolio: SimulatedPortfolio
+    day_exits: tuple[tuple[ExitResult, ...], ...] = ()
 
     @property
     def real_orders_placed(self) -> int:
@@ -68,7 +71,16 @@ async def run_phase1_multiday(
         portfolio = SimulatedPortfolio(account_cash if account_cash is not None else 0.0)
 
     day_results: list[Phase1Result] = []
+    day_exits: list[tuple[ExitResult, ...]] = []
     for day in days:
+        # entry 흐름 전에 청산 평가·적용(청산이 현금을 풀어 그날 신규 진입에 쓰일 수 있게). 그날 종가 사용.
+        prices = day.mark_prices or {}
+        exit_results = tuple(
+            apply_exit(portfolio, sym, price=prices.get(sym), params=params)
+            for sym, params in day.exits.items()
+        )
+        day_exits.append(exit_results)
+
         provider = day.decision_provider or MockDecisionProvider()
         res = await run_phase1_dry_run(
             scanner=day.scanner,
@@ -85,4 +97,4 @@ async def run_phase1_multiday(
         )
         day_results.append(res)
 
-    return MultiDayResult(tuple(day_results), portfolio)
+    return MultiDayResult(tuple(day_results), portfolio, tuple(day_exits))
