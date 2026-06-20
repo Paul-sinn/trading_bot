@@ -41,7 +41,7 @@ class SimulatedOrder:
 
     symbol: str
     side: str  # "buy" — 이번 범위는 진입 시뮬만
-    quantity: int
+    quantity: float  # 정수주는 정수값, 분수주(FRACTIONAL)는 분수.
     note: str = "SIMULATED — no broker / no live order"
 
 
@@ -93,7 +93,7 @@ class SimulatedExecutor:
         self,
         veto_input: VetoInput,
         raw_decision: Decision,
-        quantity: int,
+        quantity: float,
         *,
         fill_context: FillContext | None = None,
     ) -> SimExecutionResult:

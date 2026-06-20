@@ -18,15 +18,26 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from enum import Enum
 
 from algorithms.regime import Regime, policy_for
 
 
+class ShareMode(str, Enum):
+    """주식 수량 단위 모드. WHOLE(기본)=정수주, FRACTIONAL=분수주(소액 계좌 시뮬용)."""
+
+    WHOLE = "whole"
+    FRACTIONAL = "fractional"
+
+
 @dataclass(frozen=True)
 class PositionPlan:
-    """진입 계획. quantity 0이면 '진입 안 함'."""
+    """진입 계획. quantity 0이면 '진입 안 함'.
 
-    quantity: int
+    quantity는 float(WHOLE 모드는 정수값 float, 즉 파이썬 int를 저장 — 기존 정수주 계약 유지).
+    """
+
+    quantity: float
     stop_loss: float
     risk_amount: float
     kelly_fraction: float
@@ -165,6 +176,11 @@ def stop_loss_pct(entry_price: float, stop_loss: float) -> float:
     return (entry_price - stop_loss) / entry_price
 
 
+def _round_down_lot(value: float, lot_size: float) -> float:
+    """value를 lot_size 배수로 내림한다(분수주 정밀도). lot_size>0 가정."""
+    return math.floor(value / lot_size) * lot_size
+
+
 def position_size(
     account_equity: float,
     entry_price: float,
@@ -172,13 +188,25 @@ def position_size(
     max_risk_pct: float,
     kelly_f: float,
     appetite_weight: float,
+    *,
+    share_mode: ShareMode = ShareMode.WHOLE,
+    lot_size: float = 0.001,
 ) -> PositionPlan:
     """리스크 한도 기반 진입 수량을 계산한다.
 
     1주당 리스크 = entry - stop_loss. 허용 리스크액 = equity * max_risk_pct.
-    수량 = floor(허용리스크 / 1주당리스크 * kelly_f * appetite_weight).
+    수량 = round_down(허용리스크 / 1주당리스크 * kelly_f * appetite_weight).
     CRITICAL(ADR-003): 최종 risk_amount는 허용 리스크액을 절대 초과하지 않는다.
+
+    share_mode=WHOLE(기본): floor 정수주(기존 동작 불변). FRACTIONAL: lot_size 배수 분수주(소액
+    계좌가 고가주를 살 수 있게). 리스크 캡은 두 모드 동일.
+    fail-closed: 알 수 없는 share_mode, FRACTIONAL에서 lot_size<=0 → ValueError.
     """
+    if share_mode not in (ShareMode.WHOLE, ShareMode.FRACTIONAL):
+        raise ValueError(f"알 수 없는 share_mode: {share_mode!r}")
+    if share_mode is ShareMode.FRACTIONAL and lot_size <= 0:
+        raise ValueError(f"분수주 lot_size는 양수여야 한다: {lot_size!r}")
+
     per_share_risk = entry_price - stop_loss_price
     allowed_risk = account_equity * max_risk_pct
 
@@ -197,11 +225,18 @@ def position_size(
         )
 
     base_qty = allowed_risk / per_share_risk
-    qty = int(math.floor(base_qty * kelly_f * appetite_weight))
+    raw_qty = base_qty * kelly_f * appetite_weight
+    max_qty_raw = allowed_risk / per_share_risk  # ADR-003 한도(같은 단위).
+
+    if share_mode is ShareMode.WHOLE:
+        qty: float = int(math.floor(raw_qty))
+        max_qty = int(math.floor(max_qty_raw))
+    else:  # FRACTIONAL
+        qty = _round_down_lot(raw_qty, lot_size)
+        max_qty = _round_down_lot(max_qty_raw, lot_size)
 
     # CRITICAL(ADR-003): 한도 상한. kelly_f/appetite_weight가 1을 넘는 입력에서도
     # risk_amount가 allowed_risk를 초과하지 않도록 수량을 줄인다.
-    max_qty = int(math.floor(allowed_risk / per_share_risk))
     if qty > max_qty:
         qty = max_qty
     if qty < 0:

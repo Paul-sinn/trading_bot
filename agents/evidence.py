@@ -24,6 +24,7 @@ from algorithms.filters import _atr
 from algorithms.regime import Regime, classify_regime
 from algorithms.signals import Signal, relative_strength
 from algorithms.sizing import (
+    ShareMode,
     per_trade_risk_pct,
     position_size,
     stop_loss_pct,
@@ -68,6 +69,8 @@ class EvidenceParams:
     rs_lookback: int = 63
     ma_period: int = 200
     adv_lookback: int = 20
+    share_mode: ShareMode = ShareMode.WHOLE   # 기본 정수주(기존 동작 불변). FRACTIONAL=분수주 시뮬.
+    lot_size: float = 0.001                   # 분수주 최소단위(브로커형).
 
 
 # --- 데이터 품질 / 유동성 헬퍼 (순수) ---
@@ -160,6 +163,7 @@ def build_candidate_context(
             plan = position_size(
                 params.account_equity, entry, stop,
                 params.max_risk_pct, params.kelly_f, params.appetite_weight,
+                share_mode=params.share_mode, lot_size=params.lot_size,
             )
             qty = plan.quantity
             ptr = per_trade_risk_pct(plan.risk_amount, params.account_equity)

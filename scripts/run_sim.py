@@ -41,6 +41,7 @@ from agents.norgate_bridge import DataAdapterError, load_norgate_folder
 from agents.perf_report import format_performance_report
 from agents.policy_loader import load_policy
 from agents.price_csv import close_series
+from algorithms.sizing import ShareMode
 
 _COMPASS_SYMBOL = "SPY"   # 레짐/컴퍼스 고정 심볼.
 _VIX_SYMBOL = "VIX"
@@ -59,6 +60,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--starting-cash", type=float, default=1000.0, help="시작 현금(기본 1000)")
     p.add_argument("--benchmark", default="SPY", help="벤치마크 심볼(기본 SPY)")
     p.add_argument("--warmup", type=int, default=200, help="start 미지정 시 건너뛸 초기 바 수")
+    p.add_argument(
+        "--share-mode", choices=("whole", "fractional"), default="whole",
+        help="수량 단위: whole(기본 정수주) 또는 fractional(분수주 — 소액 계좌 고가주 시뮬)",
+    )
+    p.add_argument("--lot-size", type=float, default=0.001, help="분수주 최소단위(기본 0.001)")
     p.add_argument(
         "--assume-no-events", action="store_true",
         help="드라이런 편의: 이벤트 리스크 없음 가정(Mock). 기본 off면 이벤트 게이트 fail-closed. 실 캘린더 아님.",
@@ -123,6 +129,7 @@ def simulate(args) -> HistoricalResult:
     trading_days = _resolve_trading_days(spy.index, start, end, args.warmup)
 
     event_provider = MockEventRiskProvider(default=True) if args.assume_no_events else None
+    share_mode = ShareMode(args.share_mode)
 
     return asyncio.run(run_historical_simulation(
         price_data=price_data,
@@ -132,7 +139,11 @@ def simulate(args) -> HistoricalResult:
         account_cash=args.starting_cash,
         benchmark_prices=benchmark_prices,
         trading_days=trading_days,
-        params=EvidenceParams(account_equity=args.starting_cash),
+        params=EvidenceParams(
+            account_equity=args.starting_cash,
+            share_mode=share_mode,
+            lot_size=args.lot_size,
+        ),
         event_provider=event_provider,
     ))
 

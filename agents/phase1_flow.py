@@ -51,7 +51,7 @@ class CandidateContext:
     stop_loss_pct: float
     per_trade_risk_pct: float
     regime: Regime | None
-    quantity: int
+    quantity: float   # 정수주는 정수값, 분수주(FRACTIONAL)는 분수 — quantity>0이면 position_size_ok.
     reference_price: float = 0.0  # entry(체결 시뮬 reference). evidence가 설정.
     # 증거(transparency) — technical_confirmation = 아래 셋의 AND
     trend_confirmed: bool = False
