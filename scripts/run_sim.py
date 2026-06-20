@@ -57,6 +57,10 @@ from agents.shadow_bucket_analysis import (
     format_shadow_bucket_analysis,
 )
 from agents.shadow_whatif import compute_shadow_whatif, format_shadow_whatif
+from agents.robustness_report import (
+    compute_robustness_report,
+    format_robustness_report,
+)
 from agents.historical_sim import HistoricalResult, run_historical_simulation
 from agents.norgate_bridge import DataAdapterError, load_norgate_folder
 from agents.perf_report import format_performance_report
@@ -300,6 +304,10 @@ def run(args) -> int:
     # 섀도 필터 What-if(저점수 제거 시 성과 추정). 측정 전용 — 실 매매에 미적용.
     whatif = compute_shadow_whatif(diag, shadow)
     sections.append(format_shadow_whatif(whatif))
+
+    # 강건성/안정성(심볼·기간 의존도). 측정 전용 — 기본은 트레이드 제거 근사(추가 재시뮬 없음).
+    robustness = compute_robustness_report(result.multiday, feat_price_data, trade_diag=diag)
+    sections.append(format_robustness_report(robustness))
 
     # events-csv 사용 시: 이벤트 영향 진단(차단된 후보). 측정 전용.
     if isinstance(event_provider, EventCalendarProvider):
