@@ -36,6 +36,12 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from agents.event_calendar import EventCalendarError, EventCalendarProvider
+from agents.event_impact import (
+    compare_runs,
+    compute_event_impact,
+    format_comparison,
+    format_event_impact,
+)
 from agents.evidence import EvidenceParams, MockEventRiskProvider
 from agents.historical_sim import HistoricalResult, run_historical_simulation
 from agents.norgate_bridge import DataAdapterError, load_norgate_folder
@@ -77,6 +83,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--assume-no-events", action="store_true",
         help="개발 바이패스 전용: 이벤트 리스크 없음 가정(Mock). 실 캘린더 아님. --events-csv가 우선.",
+    )
+    p.add_argument(
+        "--compare-assume-no-events", action="store_true",
+        help="(--events-csv 필요) bypass 런을 한 번 더 돌려 events-csv와 비교 출력(측정용 추가 실행).",
     )
     p.add_argument("--output", default=None, help="성과 리포트 저장 경로(UTF-8). 콘솔에도 항상 출력.")
     return p
@@ -148,8 +158,11 @@ def _build_exit_policy(args) -> ExitPolicy | None:
         raise DataAdapterError(f"청산 설정 오류: {exc}") from exc
 
 
-def simulate(args) -> HistoricalResult:
-    """데이터를 로드·배선해 historical_sim을 돌린다. 데이터 문제는 DataAdapterError(fail-closed)."""
+def simulate(args, *, event_provider=None) -> HistoricalResult:
+    """데이터를 로드·배선해 historical_sim을 돌린다. 데이터 문제는 DataAdapterError(fail-closed).
+
+    event_provider를 주면 그것을 쓰고, 없으면 args로 결정(_resolve_event_provider, fail-closed).
+    """
     data = load_norgate_folder(args.data_root)   # 폴더/CSV/컬럼 문제 → DataAdapterError
 
     spy = close_series(data, _COMPASS_SYMBOL)            # 컴퍼스 SPY 필수
@@ -177,7 +190,7 @@ def simulate(args) -> HistoricalResult:
     end = _parse_date(args.end_date, "--end-date")
     trading_days = _resolve_trading_days(spy.index, start, end, args.warmup)
 
-    event_provider = _resolve_event_provider(args)
+    event_provider = event_provider or _resolve_event_provider(args)
     share_mode = ShareMode(args.share_mode)
     exit_policy = _build_exit_policy(args)
 
@@ -219,17 +232,30 @@ def _final_marks(args, result) -> dict[str, float]:
 
 def run(args) -> int:
     """CLI 실행: 시뮬 → 리포트 출력/저장. 데이터 문제는 exit code 2(fail-closed)."""
+    if args.compare_assume_no_events and not args.events_csv:
+        print("[설정 오류] --compare-assume-no-events 는 --events-csv 와 함께 써야 한다.", file=sys.stderr)
+        raise SystemExit(2)
     try:
-        result = simulate(args)
+        event_provider = _resolve_event_provider(args)   # fail-closed
+        result = simulate(args, event_provider=event_provider)
     except DataAdapterError as exc:
         print(f"[데이터 오류] {exc}", file=sys.stderr)
         raise SystemExit(2) from exc
 
     perf_text = format_performance_report(result.performance)
     diag = compute_trade_diagnostics(result.multiday, final_prices=_final_marks(args, result))
-    diag_text = format_trade_diagnostics(diag)
-    report_text = perf_text + "\n\n" + diag_text
+    sections = [perf_text, format_trade_diagnostics(diag)]
 
+    # events-csv 사용 시: 이벤트 영향 진단(차단된 후보). 측정 전용.
+    if isinstance(event_provider, EventCalendarProvider):
+        impact = compute_event_impact(result.multiday, event_provider=event_provider)
+        sections.append(format_event_impact(impact))
+        # 비교: bypass 런을 추가로 돌려(측정용) events-csv와 대조.
+        if args.compare_assume_no_events:
+            bypass = simulate(args, event_provider=MockEventRiskProvider(default=True))
+            sections.append(format_comparison(compare_runs(bypass, result, event_provider=event_provider)))
+
+    report_text = "\n\n".join(sections)
     print(report_text)
     print(f"  (실주문 0 확인: {result.real_orders_placed} / {diag.real_orders_placed})")
 
