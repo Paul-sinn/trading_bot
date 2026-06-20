@@ -56,6 +56,7 @@ from agents.shadow_bucket_analysis import (
     compute_shadow_bucket_analysis,
     format_shadow_bucket_analysis,
 )
+from agents.shadow_whatif import compute_shadow_whatif, format_shadow_whatif
 from agents.historical_sim import HistoricalResult, run_historical_simulation
 from agents.norgate_bridge import DataAdapterError, load_norgate_folder
 from agents.perf_report import format_performance_report
@@ -295,6 +296,10 @@ def run(args) -> int:
     # 섀도 스코어 버킷 분석(고점수 버킷이 더 좋은 성과인지). 측정 전용 — 매매에 미사용.
     buckets = compute_shadow_bucket_analysis(diag, shadow)
     sections.append(format_shadow_bucket_analysis(buckets))
+
+    # 섀도 필터 What-if(저점수 제거 시 성과 추정). 측정 전용 — 실 매매에 미적용.
+    whatif = compute_shadow_whatif(diag, shadow)
+    sections.append(format_shadow_whatif(whatif))
 
     # events-csv 사용 시: 이벤트 영향 진단(차단된 후보). 측정 전용.
     if isinstance(event_provider, EventCalendarProvider):
