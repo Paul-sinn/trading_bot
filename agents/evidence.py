@@ -148,10 +148,12 @@ def build_candidate_context(
     stop_pct = 0.0
     ptr = _INF
     qty = 0
+    reference_price = 0.0
     if data_ok:
         try:
             close = pd.Series(df["close"], dtype="float64")
             entry = float(close.iloc[-1])
+            reference_price = entry
             atr = float(_atr(df, params.atr_period).iloc[-1])
             stop = stop_loss_price(entry, atr, params.atr_multiplier)
             stop_pct = stop_loss_pct(entry, stop)
@@ -163,7 +165,7 @@ def build_candidate_context(
             ptr = per_trade_risk_pct(plan.risk_amount, params.account_equity)
         except Exception:  # noqa: BLE001 — 사이징 실패 = 데이터 이상 → 무효.
             data_ok = False
-            stop_pct, ptr, qty = 0.0, _INF, 0
+            stop_pct, ptr, qty, reference_price = 0.0, _INF, 0, 0.0
 
     # market regime (실패 → None → hard-veto가 막음).
     try:
@@ -187,6 +189,7 @@ def build_candidate_context(
         per_trade_risk_pct=ptr,
         regime=regime,
         quantity=qty,
+        reference_price=reference_price,
         trend_confirmed=trend_confirmed,
         volume_confirmed=volume_confirmed,
         relative_strength_confirmed=rs_confirmed,

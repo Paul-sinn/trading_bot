@@ -24,6 +24,7 @@ from agents.dry_run import (
     build_dry_run_decision,
     build_dry_run_report,
 )
+from agents.fill import FillContext, SimulatedFill
 from agents.sim_execution import SimulatedExecutor, SimulatedOrder
 from algorithms.policy import (
     Policy,
@@ -50,6 +51,7 @@ class CandidateContext:
     per_trade_risk_pct: float
     regime: Regime | None
     quantity: int
+    reference_price: float = 0.0  # entry(체결 시뮬 reference). evidence가 설정.
     # 증거(transparency) — technical_confirmation = 아래 셋의 AND
     trend_confirmed: bool = False
     volume_confirmed: bool = False
@@ -70,6 +72,7 @@ class Phase1Result:
     report: DryRunReport
     simulated_orders: tuple[SimulatedOrder, ...]
     weight_suggestions: dict[str, WeightSuggestion]
+    simulated_fills: tuple[SimulatedFill, ...] = ()
 
     @property
     def real_orders_placed(self) -> int:
@@ -122,8 +125,12 @@ async def run_phase1_dry_run(
     contexts: dict[str, CandidateContext],
     report_date: str,
     executor: SimulatedExecutor | None = None,
+    account_cash: float | None = None,
 ) -> Phase1Result:
-    """Phase 1 흐름을 배선해 dry-run 리포트 + 시뮬 주문을 만든다(실주문 0)."""
+    """Phase 1 흐름을 배선해 dry-run 리포트 + 시뮬 주문/체결을 만든다(실주문 0).
+
+    account_cash가 주어지면 주문 생성 시 체결도 시뮬한다(reference_price = 후보 entry).
+    """
     mode = policy.mode(risk_mode_name)
     if mode is None:
         raise ValueError(f"알 수 없는 risk_mode: {risk_mode_name!r}")
@@ -153,8 +160,22 @@ async def run_phase1_dry_run(
             veto_input = _veto_input_for(symbol, mode, universe, weight, ctx)
             rationale = f"weight 제안: {sug.status}"
 
-        # RiskGate 게이트 + 시뮬 주문 생성(통과 시에만). 우회 불가.
-        executor.submit(veto_input, raw, ctx.quantity if ctx is not None else 0)
+        # 체결 시뮬: account_cash + 유효 reference_price 있을 때만(주문 생성 분기에서만 체결됨).
+        fill_context = None
+        if (
+            account_cash is not None
+            and ctx is not None
+            and ctx.reference_price > 0
+        ):
+            fill_context = FillContext(
+                reference_price=ctx.reference_price, account_cash=account_cash
+            )
+
+        # RiskGate 게이트 + 시뮬 주문(+체결) 생성(통과 시에만). 우회 불가.
+        executor.submit(
+            veto_input, raw, ctx.quantity if ctx is not None else 0,
+            fill_context=fill_context,
+        )
         rows.append(build_dry_run_decision(veto_input, raw, rationale=rationale))
 
     report = build_dry_run_report(
@@ -165,4 +186,6 @@ async def run_phase1_dry_run(
         compass_state=compass_state,
         decisions=tuple(rows),
     )
-    return Phase1Result(report, executor.simulated_orders, suggestions)
+    return Phase1Result(
+        report, executor.simulated_orders, suggestions, executor.simulated_fills
+    )

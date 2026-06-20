@@ -22,6 +22,7 @@ from typing import Callable
 
 from agents.decision import Decision
 from agents.dry_run import build_dry_run_decision
+from agents.fill import FillContext, SimulatedFill, simulate_fill
 from agents.risk import check_risk_gate
 from algorithms.policy import VetoInput, VetoResult
 
@@ -41,12 +42,13 @@ class SimulatedOrder:
 
 @dataclass(frozen=True)
 class SimExecutionResult:
-    """submit 결과. created=False면 order None + 거부 사유."""
+    """submit 결과. created=False면 order None + 거부 사유. fill은 fill_context 주입 + 생성 시에만."""
 
     created: bool
     order: SimulatedOrder | None
     veto: VetoResult | None
     reason: str
+    fill: SimulatedFill | None = None
 
 
 class SimulatedExecutor:
@@ -58,6 +60,7 @@ class SimulatedExecutor:
     def __init__(self, *, global_gate: GlobalGate = check_risk_gate) -> None:
         self._global_gate = global_gate
         self._orders: list[SimulatedOrder] = []
+        self._fills: list[SimulatedFill] = []
         self.rejections: list[str] = []
 
     @property
@@ -66,14 +69,24 @@ class SimulatedExecutor:
         return tuple(self._orders)
 
     @property
+    def simulated_fills(self) -> tuple[SimulatedFill, ...]:
+        """기록된 시뮬 체결(읽기전용 뷰). 주문이 생성된 경우에만 존재."""
+        return tuple(self._fills)
+
+    @property
     def real_orders_placed(self) -> int:
         """항상 0 — 실 브로커 호출 없음(구조적 불변식)."""
         return 0
 
     def submit(
-        self, veto_input: VetoInput, raw_decision: Decision, quantity: int
+        self,
+        veto_input: VetoInput,
+        raw_decision: Decision,
+        quantity: int,
+        *,
+        fill_context: FillContext | None = None,
     ) -> SimExecutionResult:
-        """후보를 검증해 통과 시에만 시뮬 주문을 만든다(spec 순서 — 우회 불가)."""
+        """후보를 검증해 통과 시에만 시뮬 주문(+ fill_context 있으면 체결)을 만든다(우회 불가)."""
         # ① per-candidate hard-veto 평가(RiskGate 최종권 포함). 예외 → fail-closed.
         try:
             row = build_dry_run_decision(veto_input, raw_decision)
@@ -103,14 +116,19 @@ class SimulatedExecutor:
                 veto, f"진입(BUY) 아님(raw={raw_decision.value}) — 시뮬 주문 없음"
             )
 
-        # ⑤ 통과 — 여기서만 시뮬 주문을 만든다(실주문 아님).
+        # ⑤ 통과 — 여기서만 시뮬 주문을 만든다(실주문 아님). fill_context 있으면 체결도 여기서만.
         order = SimulatedOrder(symbol=veto_input.symbol, side="buy", quantity=quantity)
         self._orders.append(order)
+        fill = None
+        if fill_context is not None:
+            fill = simulate_fill(order, fill_context)
+            self._fills.append(fill)
         return SimExecutionResult(
             created=True,
             order=order,
             veto=veto,
             reason="RiskGate PASS — 시뮬 주문 생성(실주문 아님, real_orders_placed=0)",
+            fill=fill,
         )
 
     def _reject(self, veto: VetoResult | None, reason: str) -> SimExecutionResult:
