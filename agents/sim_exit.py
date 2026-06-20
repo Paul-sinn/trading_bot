@@ -44,6 +44,61 @@ class ExitParams:
 
 
 @dataclass(frozen=True)
+class ExitPolicy:
+    """다일 시뮬용 상위 청산 설정(포지션 무관 비율/일수). 포지션별 ExitParams로 변환해 쓴다.
+
+    stop_loss_pct: 진입가 대비 손절 비율(예: 0.10 = 진입가 -10%). trail_pct: 추적 고점 대비 비율.
+    max_hold_days: 보유 일수 도달 시 시간청산. manual_exit_date: 그 날짜(YYYY-MM-DD)에 전량 청산.
+    아무 것도 없으면 비활성(기존 동작 보존). fail-closed: 음수/0 비율, 0 이하 max_hold_days → ValueError.
+    """
+
+    stop_loss_pct: float | None = None
+    trail_pct: float | None = None
+    max_hold_days: int | None = None
+    manual_exit_date: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.stop_loss_pct is not None and not (0.0 < self.stop_loss_pct < 1.0):
+            raise ValueError(f"stop_loss_pct는 (0,1) 범위여야 한다: {self.stop_loss_pct!r}")
+        if self.trail_pct is not None and not (0.0 < self.trail_pct < 1.0):
+            raise ValueError(f"trail_pct는 (0,1) 범위여야 한다: {self.trail_pct!r}")
+        if self.max_hold_days is not None and self.max_hold_days <= 0:
+            raise ValueError(f"max_hold_days는 양수여야 한다: {self.max_hold_days!r}")
+
+    @property
+    def is_active(self) -> bool:
+        """청산 설정이 하나라도 있으면 True(없으면 기존 동작 그대로)."""
+        return any((
+            self.stop_loss_pct is not None,
+            self.trail_pct is not None,
+            self.max_hold_days is not None,
+            self.manual_exit_date is not None,
+        ))
+
+
+def exit_params_for_position(
+    policy: ExitPolicy, *, avg_entry_price: float, hold_days: int, manual: bool = False
+) -> ExitParams:
+    """상위 ExitPolicy + 포지션 상태(진입가/보유일)를 포지션별 ExitParams로 변환한다(순수).
+
+    stop_price = 진입가 × (1 - stop_loss_pct). trail_pct는 그대로(trailing_high는 apply_exit가 포지션
+    추적값을 쓴다). max_hold_days/hold_days로 시간청산. manual은 호출부가 날짜 비교로 결정.
+    """
+    stop_price = (
+        avg_entry_price * (1.0 - policy.stop_loss_pct)
+        if policy.stop_loss_pct is not None
+        else None
+    )
+    return ExitParams(
+        stop_price=stop_price,
+        trail_pct=policy.trail_pct,
+        hold_days=hold_days if policy.max_hold_days is not None else None,
+        max_hold_days=policy.max_hold_days,
+        manual_exit=manual,
+    )
+
+
+@dataclass(frozen=True)
 class ExitDecision:
     """청산 평가 결과."""
 

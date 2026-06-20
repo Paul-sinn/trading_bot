@@ -15,7 +15,13 @@ from dataclasses import dataclass, field
 
 from agents.decision import MockDecisionProvider
 from agents.phase1_flow import CandidateContext, Phase1Result, run_phase1_dry_run
-from agents.sim_exit import ExitParams, ExitResult, apply_exit
+from agents.sim_exit import (
+    ExitParams,
+    ExitPolicy,
+    ExitResult,
+    apply_exit,
+    exit_params_for_position,
+)
 from agents.sim_portfolio import PortfolioSnapshot, SimulatedPortfolio, TradeRecord
 
 
@@ -65,10 +71,18 @@ async def run_phase1_multiday(
     policy,
     account_cash: float | None = None,
     portfolio: SimulatedPortfolio | None = None,
+    exit_policy: ExitPolicy | None = None,
 ) -> MultiDayResult:
-    """Phase 1 흐름을 일별로 돌리며 동일 포트폴리오를 이월한다(실주문 0)."""
+    """Phase 1 흐름을 일별로 돌리며 동일 포트폴리오를 이월한다(실주문 0).
+
+    exit_policy가 주어지면(활성) 매일 현재 보유 포지션의 진입가/보유일로 포지션별 ExitParams를 만들어
+    청산을 평가한다(stop/trailing/time/manual). 없으면 기존처럼 DayInput.exits만 쓴다 — 기본 동작 불변.
+    """
     if portfolio is None:
         portfolio = SimulatedPortfolio(account_cash if account_cash is not None else 0.0)
+
+    use_policy = exit_policy is not None and exit_policy.is_active
+    hold_days: dict[str, int] = {}  # 심볼별 보유 일수(청산 전 증가).
 
     day_results: list[Phase1Result] = []
     day_exits: list[tuple[ExitResult, ...]] = []
@@ -76,11 +90,32 @@ async def run_phase1_multiday(
         # 1) 그날 종가로 trailing_high 갱신(상승 시만) → 트레일링 스탑이 갱신된 고점을 쓴다.
         prices = day.mark_prices or {}
         portfolio.update_trailing_highs(prices)
-        # 2) entry 흐름 전에 청산 평가·적용(청산이 현금을 풀어 그날 신규 진입에 쓰일 수 있게).
+
+        # 2) 청산 평가·적용(entry 전 — 청산이 현금을 풀어 그날 신규 진입에 쓰일 수 있게).
+        if use_policy:
+            for sym in portfolio.positions:  # 보유 포지션 보유일 +1(이번 날 포함).
+                hold_days[sym] = hold_days.get(sym, 0) + 1
+            exit_params_by_sym = {
+                sym: exit_params_for_position(
+                    exit_policy,
+                    avg_entry_price=pos.avg_entry_price,
+                    hold_days=hold_days.get(sym, 0),
+                    manual=(exit_policy.manual_exit_date is not None
+                            and day.date == exit_policy.manual_exit_date),
+                )
+                for sym, pos in portfolio.positions.items()
+            }
+        else:
+            exit_params_by_sym = day.exits
+
         exit_results = tuple(
             apply_exit(portfolio, sym, price=prices.get(sym), params=params)
-            for sym, params in day.exits.items()
+            for sym, params in exit_params_by_sym.items()
         )
+        if use_policy:  # 청산된 심볼은 보유일 추적 정리(재진입 시 새로 카운트).
+            for sym in list(hold_days):
+                if sym not in portfolio.positions:
+                    hold_days.pop(sym, None)
         day_exits.append(exit_results)
 
         provider = day.decision_provider or MockDecisionProvider()

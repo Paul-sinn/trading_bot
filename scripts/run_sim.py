@@ -41,6 +41,7 @@ from agents.norgate_bridge import DataAdapterError, load_norgate_folder
 from agents.perf_report import format_performance_report
 from agents.policy_loader import load_policy
 from agents.price_csv import close_series
+from agents.sim_exit import ExitPolicy
 from agents.trade_diagnostics import compute_trade_diagnostics, format_trade_diagnostics
 from algorithms.sizing import ShareMode
 
@@ -66,6 +67,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="수량 단위: whole(기본 정수주) 또는 fractional(분수주 — 소액 계좌 고가주 시뮬)",
     )
     p.add_argument("--lot-size", type=float, default=0.001, help="분수주 최소단위(기본 0.001)")
+    # 청산 옵션(기존 sim_exit 재사용). 아무 것도 안 주면 청산 미적용 — 포지션 OPEN 유지(기본 동작 불변).
+    p.add_argument("--stop-loss-pct", type=float, default=None, help="진입가 대비 손절 비율(예: 0.10)")
+    p.add_argument("--trailing-stop-pct", type=float, default=None, help="추적 고점 대비 청산 비율(예: 0.15)")
+    p.add_argument("--max-holding-days", type=int, default=None, help="보유 일수 도달 시 시간청산")
+    p.add_argument("--manual-exit-date", default=None, help="해당 날짜(YYYY-MM-DD)에 전량 청산")
     p.add_argument(
         "--assume-no-events", action="store_true",
         help="드라이런 편의: 이벤트 리스크 없음 가정(Mock). 기본 off면 이벤트 게이트 fail-closed. 실 캘린더 아님.",
@@ -100,6 +106,29 @@ def _resolve_trading_days(index, start, end, warmup):
     return days
 
 
+def _build_exit_policy(args) -> ExitPolicy | None:
+    """청산 플래그 → ExitPolicy. 아무 것도 없으면 None(청산 미적용, 기존 동작 불변).
+
+    잘못된 값(범위 밖 비율/0 이하 일수)은 ExitPolicy가 ValueError → DataAdapterError로 감싸 fail-closed.
+    """
+    if not any((
+        args.stop_loss_pct is not None,
+        args.trailing_stop_pct is not None,
+        args.max_holding_days is not None,
+        args.manual_exit_date is not None,
+    )):
+        return None
+    try:
+        return ExitPolicy(
+            stop_loss_pct=args.stop_loss_pct,
+            trail_pct=args.trailing_stop_pct,
+            max_hold_days=args.max_holding_days,
+            manual_exit_date=args.manual_exit_date,
+        )
+    except ValueError as exc:
+        raise DataAdapterError(f"청산 설정 오류: {exc}") from exc
+
+
 def simulate(args) -> HistoricalResult:
     """데이터를 로드·배선해 historical_sim을 돌린다. 데이터 문제는 DataAdapterError(fail-closed)."""
     data = load_norgate_folder(args.data_root)   # 폴더/CSV/컬럼 문제 → DataAdapterError
@@ -131,6 +160,7 @@ def simulate(args) -> HistoricalResult:
 
     event_provider = MockEventRiskProvider(default=True) if args.assume_no_events else None
     share_mode = ShareMode(args.share_mode)
+    exit_policy = _build_exit_policy(args)
 
     return asyncio.run(run_historical_simulation(
         price_data=price_data,
@@ -146,6 +176,7 @@ def simulate(args) -> HistoricalResult:
             lot_size=args.lot_size,
         ),
         event_provider=event_provider,
+        exit_policy=exit_policy,
     ))
 
 

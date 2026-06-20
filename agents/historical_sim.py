@@ -23,7 +23,7 @@ from agents.evidence import EvidenceParams, EventRiskProvider, build_contexts
 from agents.multiday import DayInput, MultiDayResult, run_phase1_multiday
 from agents.perf_report import PerformanceReport, performance_from_multiday
 from agents.scanner import MockPriceDataProvider, ScannerAgent
-from agents.sim_exit import ExitParams
+from agents.sim_exit import ExitParams, ExitPolicy
 from algorithms.policy import Policy
 from agents.sim_portfolio import SimulatedPortfolio, TradeRecord
 
@@ -112,22 +112,32 @@ async def run_historical_simulation(
     event_provider: EventRiskProvider | None = None,
     warmup: int = 200,
     default_exit_params: ExitParams | None = None,
+    exit_policy: ExitPolicy | None = None,
 ) -> HistoricalResult:
-    """과거 일봉으로 멀티데이 dry-run을 구동하고 성과를 산출한다(실주문 0)."""
+    """과거 일봉으로 멀티데이 dry-run을 구동하고 성과를 산출한다(실주문 0).
+
+    exit_policy(활성)가 주어지면 매일 보유 포지션의 진입가/보유일로 청산을 동적 평가한다(stop/trailing/
+    time/manual). 없으면 청산 미적용 — 포지션은 OPEN으로 남는다(기본 동작 불변).
+    """
     if params is None:
         params = EvidenceParams(account_equity=account_cash)
     if trading_days is None:
         idx = spy_prices.index if hasattr(spy_prices, "index") else []
         trading_days = list(idx[warmup:])
 
+    # exit_policy를 쓰면 정적 default_exit_params는 무시(이중 청산 방지) — 동적 경로가 단일 진실.
+    static_exits = None if (exit_policy is not None and exit_policy.is_active) else default_exit_params
+
     days = [
         await _build_day(
             as_of, price_data, spy_prices, vix, benchmark_prices,
-            params, event_provider, default_exit_params,
+            params, event_provider, static_exits,
         )
         for as_of in trading_days
     ]
 
-    multiday = await run_phase1_multiday(days=days, policy=policy, account_cash=account_cash)
+    multiday = await run_phase1_multiday(
+        days=days, policy=policy, account_cash=account_cash, exit_policy=exit_policy
+    )
     performance = performance_from_multiday(multiday)
     return HistoricalResult(multiday=multiday, performance=performance)
