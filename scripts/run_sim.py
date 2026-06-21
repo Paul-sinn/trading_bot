@@ -123,6 +123,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--compare-assume-no-events", action="store_true",
         help="(--events-csv 필요) bypass 런을 한 번 더 돌려 events-csv와 비교 출력(측정용 추가 실행).",
     )
+    p.add_argument(
+        "--entry-fill-model", choices=("current", "next-bar-limit", "next-open"), default="current",
+        help="진입 체결 모델(opt-in): current(기본, 시그널 close 즉시) / next-bar-limit / next-open",
+    )
+    p.add_argument(
+        "--entry-limit-buffer-pct", type=float, default=0.03,
+        help="next-bar-limit 한정가 버퍼(기본 0.03)",
+    )
     p.add_argument("--output", default=None, help="성과 리포트 저장 경로(UTF-8). 콘솔에도 항상 출력.")
     return p
 
@@ -244,6 +252,8 @@ def simulate(args, *, event_provider=None) -> HistoricalResult:
         ),
         event_provider=event_provider,
         exit_policy=exit_policy,
+        entry_fill_model=getattr(args, "entry_fill_model", "current"),
+        entry_limit_buffer_pct=getattr(args, "entry_limit_buffer_pct", 0.03),
     ))
 
 
@@ -281,6 +291,27 @@ def _feature_inputs(args):
     else:
         universe = [s for s in data if s not in aux]
     return {s: data[s] for s in universe}, benchmark_prices
+
+
+def _format_fill_mode_comparison(current, realistic, model) -> str:
+    """current vs 현실적 진입 체결 모드 성과 비교(측정 — 실주문 없음)."""
+    cp, rp = current.performance, realistic.performance
+    fill_rate = (rp.num_trades / cp.num_trades) if cp.num_trades > 0 else None
+    lines = ["=" * 70, f"Entry Fill Mode Comparison: current vs {model} (측정 - 실주문 없음)", "=" * 70]
+    lines.append(f"  {'metric':<18}{'current':>14}{model:>16}")
+    lines.append(f"  {'trades':<18}{cp.num_trades:>14}{rp.num_trades:>16}")
+    lines.append(f"  {'cum_return':<18}{cp.cumulative_return:>13.2%}{rp.cumulative_return:>15.2%}")
+    lines.append(f"  {'max_drawdown':<18}{cp.max_drawdown:>13.2%}{rp.max_drawdown:>15.2%}")
+    lines.append(f"  {'win_rate':<18}{cp.win_rate:>13.2%}{rp.win_rate:>15.2%}")
+    lines.append(f"  {'total_pnl':<18}{cp.total_pnl:>14.2f}{rp.total_pnl:>16.2f}")
+    miss = cp.num_trades - rp.num_trades
+    lines.append(
+        f"  implied entry fill rate: {('%.0f%%' % (fill_rate * 100)) if fill_rate is not None else 'n/a'} "
+        f"(missed {miss} of {cp.num_trades} entries)"
+    )
+    lines.append(f"  real_orders_placed : {realistic.real_orders_placed} / {current.real_orders_placed}")
+    lines.append("=" * 70)
+    return "\n".join(lines)
 
 
 def run(args) -> int:
@@ -355,6 +386,13 @@ def run(args) -> int:
     # 진입 한정가 민감도(버퍼 그리드 + marketable, 다음-바 체결). 측정 전용 — 실 체결 불변.
     entry_sens = compute_entry_limit_sensitivity(diag, feat_price_data)
     sections.append(format_entry_limit_sensitivity(entry_sens))
+
+    # 현실적 진입 체결 모드를 쓰면 current 베이스라인을 한 번 더 돌려 성과 비교(측정용 추가 실행).
+    if getattr(args, "entry_fill_model", "current") != "current":
+        baseline_args = argparse.Namespace(**vars(args))
+        baseline_args.entry_fill_model = "current"
+        current_result = simulate(baseline_args, event_provider=event_provider)
+        sections.append(_format_fill_mode_comparison(current_result, result, args.entry_fill_model))
 
     # events-csv 사용 시: 이벤트 영향 진단(차단된 후보). 측정 전용.
     if isinstance(event_provider, EventCalendarProvider):

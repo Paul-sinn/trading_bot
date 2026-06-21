@@ -14,7 +14,7 @@ spec: specs/historical_sim.md
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import pandas as pd
 
@@ -55,6 +55,70 @@ def _slice(series, as_of):
     return series
 
 
+# 진입 체결 모델(opt-in). current는 기존 동작(시그널일 close 즉시 체결).
+ENTRY_FILL_MODELS = ("current", "next-bar-limit", "next-open")
+
+
+def resolve_entry_fill(reference_price, next_bar, model: str, buffer: float):
+    """진입 체결가를 결정한다(순수). 미체결이면 None.
+
+    current: reference_price 그대로(다음 바 무관).
+    next-bar-limit: limit=ref×(1+buffer). next_open≤limit→next_open, 아니면 next_low≤limit→limit, 그 외 미체결.
+    next-open: 다음 바 있으면 next_open, 없으면 미체결.
+    next_bar는 (open, high, low) 또는 None.
+    """
+    if model == "current":
+        return reference_price
+    if next_bar is None:
+        return None
+    nopen, _nhigh, nlow = next_bar
+    if model == "next-open":
+        return nopen
+    # next-bar-limit
+    limit = reference_price * (1.0 + buffer)
+    if nopen <= limit:
+        return nopen
+    if nlow <= limit:
+        return limit
+    return None
+
+
+def _next_bar_after(df, as_of):
+    """as_of 다음 거래 바 (open, high, low). 결측/마지막 바면 None."""
+    if df is None or as_of not in df.index:
+        return None
+    pos = df.index.get_loc(as_of)
+    if not isinstance(pos, int) or pos + 1 >= len(df.index):
+        return None
+    row = df.iloc[pos + 1]
+    try:
+        return float(row["open"]), float(row["high"]), float(row["low"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _apply_entry_fill_model(contexts, price_data, as_of, model: str, buffer: float):
+    """후보 컨텍스트에 진입 체결 모델을 적용한다(reference_price 교체 또는 미체결 시 quantity=0).
+
+    사이징(quantity)·veto·스캐너/디시전은 바꾸지 않는다 — 미체결은 quantity=0으로 기존 RiskGate가
+    veto하게 둬 주문/체결/포지션이 생기지 않는다(우회 없음). model=current면 그대로 반환.
+    """
+    if model == "current":
+        return contexts
+    adjusted: dict = {}
+    for sym, ctx in contexts.items():
+        if ctx.reference_price <= 0:
+            adjusted[sym] = ctx       # 가격 없음 — 어차피 체결 컨텍스트 미생성.
+            continue
+        next_bar = _next_bar_after(price_data.get(sym), as_of)
+        fill_price = resolve_entry_fill(ctx.reference_price, next_bar, model, buffer)
+        if fill_price is None:
+            adjusted[sym] = replace(ctx, quantity=0)             # 미체결 → veto → no trade.
+        else:
+            adjusted[sym] = replace(ctx, reference_price=fill_price)
+    return adjusted
+
+
 async def _build_day(
     as_of,
     price_data: dict[str, pd.DataFrame],
@@ -64,6 +128,8 @@ async def _build_day(
     params: EvidenceParams,
     event_provider,
     default_exit_params: ExitParams | None,
+    entry_fill_model: str = "current",
+    entry_limit_buffer_pct: float = 0.03,
 ) -> DayInput:
     """day D의 DayInput을 point-in-time 슬라이스로 구성한다."""
     frames: dict[str, pd.DataFrame] = {}
@@ -86,6 +152,10 @@ async def _build_day(
         params=params,
         benchmark_prices=_slice(benchmark_prices, as_of) if benchmark_prices is not None else None,
         event_provider=event_provider,
+    )
+    # opt-in: 진입 체결을 다음 거래 바로 모델링(기본 current면 무변경).
+    contexts = _apply_entry_fill_model(
+        contexts, price_data, as_of, entry_fill_model, entry_limit_buffer_pct
     )
 
     exits: dict[str, ExitParams] = {}
@@ -113,6 +183,8 @@ async def run_historical_simulation(
     warmup: int = 200,
     default_exit_params: ExitParams | None = None,
     exit_policy: ExitPolicy | None = None,
+    entry_fill_model: str = "current",
+    entry_limit_buffer_pct: float = 0.03,
 ) -> HistoricalResult:
     """과거 일봉으로 멀티데이 dry-run을 구동하고 성과를 산출한다(실주문 0).
 
@@ -132,6 +204,8 @@ async def run_historical_simulation(
         await _build_day(
             as_of, price_data, spy_prices, vix, benchmark_prices,
             params, event_provider, static_exits,
+            entry_fill_model=entry_fill_model,
+            entry_limit_buffer_pct=entry_limit_buffer_pct,
         )
         for as_of in trading_days
     ]
