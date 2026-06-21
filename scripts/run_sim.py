@@ -74,6 +74,10 @@ from agents.next_bar_fill_whatif import (
     compute_next_bar_fill_whatif,
     format_next_bar_fill_whatif,
 )
+from agents.entry_limit_sensitivity import (
+    compute_entry_limit_sensitivity,
+    format_entry_limit_sensitivity,
+)
 from agents.historical_sim import HistoricalResult, run_historical_simulation
 from agents.norgate_bridge import DataAdapterError, load_norgate_folder
 from agents.perf_report import format_performance_report
@@ -347,6 +351,10 @@ def run(args) -> int:
     # 다음-바 체결 what-if(같은-바 lookahead 제거). 측정 전용 — 실 체결 불변.
     next_bar_whatif = compute_next_bar_fill_whatif(order_plan, feat_price_data, trade_diag=diag)
     sections.append(format_next_bar_fill_whatif(next_bar_whatif))
+
+    # 진입 한정가 민감도(버퍼 그리드 + marketable, 다음-바 체결). 측정 전용 — 실 체결 불변.
+    entry_sens = compute_entry_limit_sensitivity(diag, feat_price_data)
+    sections.append(format_entry_limit_sensitivity(entry_sens))
 
     # events-csv 사용 시: 이벤트 영향 진단(차단된 후보). 측정 전용.
     if isinstance(event_provider, EventCalendarProvider):
