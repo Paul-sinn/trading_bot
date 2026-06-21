@@ -78,6 +78,10 @@ from agents.entry_limit_sensitivity import (
     compute_entry_limit_sensitivity,
     format_entry_limit_sensitivity,
 )
+from agents.winner_extension_whatif import (
+    compute_selective_winner_extension,
+    format_selective_winner_extension,
+)
 from agents.historical_sim import HistoricalResult, run_historical_simulation
 from agents.norgate_bridge import DataAdapterError, load_norgate_folder
 from agents.perf_report import format_performance_report
@@ -389,6 +393,10 @@ def run(args) -> int:
     # 진입 한정가 민감도(버퍼 그리드 + marketable, 다음-바 체결). 측정 전용 — 실 체결 불변.
     entry_sens = compute_entry_limit_sensitivity(diag, feat_price_data)
     sections.append(format_entry_limit_sensitivity(entry_sens))
+
+    # 선택적 승자 연장 what-if(수익+건강 60일 time_stop만 90/120 연장). 측정 전용 — 실 trade_log 불변.
+    winner_ext = compute_selective_winner_extension(diag, feat_price_data, benchmark_prices=feat_benchmark)
+    sections.append(format_selective_winner_extension(winner_ext))
 
     # 현실적 진입 체결 모드를 쓰면 current 베이스라인을 한 번 더 돌려 성과 비교(측정용 추가 실행).
     if getattr(args, "entry_fill_model", "current") != "current":
