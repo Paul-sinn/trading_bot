@@ -119,7 +119,18 @@ def _apply_entry_fill_model(contexts, price_data, as_of, model: str, buffer: flo
     return adjusted
 
 
-async def _build_day(
+def _date_str(as_of) -> str:
+    return str(as_of.date()) if hasattr(as_of, "date") else str(as_of)
+
+
+class _EmptyScanner:
+    """후보 없는 스캐너(체결할 신호가 없는 날 — deferred 모드 첫 바)."""
+
+    async def scan(self):
+        return []
+
+
+async def _scan_day(
     as_of,
     price_data: dict[str, pd.DataFrame],
     spy_prices,
@@ -128,10 +139,8 @@ async def _build_day(
     params: EvidenceParams,
     event_provider,
     default_exit_params: ExitParams | None,
-    entry_fill_model: str = "current",
-    entry_limit_buffer_pct: float = 0.03,
-) -> DayInput:
-    """day D의 DayInput을 point-in-time 슬라이스로 구성한다."""
+):
+    """day D를 point-in-time 슬라이스로 스캔한다 → (scanner, contexts, mark_prices, exits)."""
     frames: dict[str, pd.DataFrame] = {}
     mark_prices: dict[str, float] = {}
     for sym, df in price_data.items():
@@ -153,20 +162,94 @@ async def _build_day(
         benchmark_prices=_slice(benchmark_prices, as_of) if benchmark_prices is not None else None,
         event_provider=event_provider,
     )
+    exits: dict[str, ExitParams] = {}
+    if default_exit_params is not None:
+        exits = {sym: default_exit_params for sym in frames}  # 미보유 심볼은 apply_exit가 무시.
+    return scanner, contexts, mark_prices, exits
+
+
+async def _build_day(
+    as_of,
+    price_data: dict[str, pd.DataFrame],
+    spy_prices,
+    vix,
+    benchmark_prices,
+    params: EvidenceParams,
+    event_provider,
+    default_exit_params: ExitParams | None,
+    entry_fill_model: str = "current",
+    entry_limit_buffer_pct: float = 0.03,
+) -> DayInput:
+    """day D의 DayInput을 구성한다(current 경로 — 같은 바에 체결, 기존 동작 불변)."""
+    scanner, contexts, mark_prices, exits = await _scan_day(
+        as_of, price_data, spy_prices, vix, benchmark_prices, params, event_provider,
+        default_exit_params,
+    )
     # opt-in: 진입 체결을 다음 거래 바로 모델링(기본 current면 무변경).
     contexts = _apply_entry_fill_model(
         contexts, price_data, as_of, entry_fill_model, entry_limit_buffer_pct
     )
-
-    exits: dict[str, ExitParams] = {}
-    if default_exit_params is not None:
-        exits = {sym: default_exit_params for sym in frames}  # 미보유 심볼은 apply_exit가 무시.
-
-    date_str = str(as_of.date()) if hasattr(as_of, "date") else str(as_of)
     return DayInput(
-        date=date_str, scanner=scanner, contexts=contexts,
+        date=_date_str(as_of), scanner=scanner, contexts=contexts,
         mark_prices=mark_prices, exits=exits,
     )
+
+
+def _resolve_fill_contexts(prev_contexts, price_data, prev_as_of, model: str, buffer: float):
+    """전일(prev) 후보를 이날(다음 바)에 체결한다 — reference_price를 체결가로, 미체결은 quantity=0."""
+    out: dict = {}
+    for sym, ctx in prev_contexts.items():
+        if ctx.reference_price <= 0:
+            out[sym] = ctx
+            continue
+        next_bar = _next_bar_after(price_data.get(sym), prev_as_of)
+        fill_price = resolve_entry_fill(ctx.reference_price, next_bar, model, buffer)
+        if fill_price is None:
+            out[sym] = replace(ctx, quantity=0)
+        else:
+            out[sym] = replace(ctx, reference_price=fill_price)
+    return out
+
+
+async def _build_deferred_days(
+    trading_days,
+    price_data: dict[str, pd.DataFrame],
+    spy_prices,
+    vix,
+    benchmark_prices,
+    params: EvidenceParams,
+    event_provider,
+    default_exit_params: ExitParams | None,
+    model: str,
+    buffer: float,
+) -> list[DayInput]:
+    """next-bar 모드: 신호는 후보일에 잡고 체결/포지션은 **다음 거래 바**에 일어나게 day를 구성한다.
+
+    DayInput[i]는 전일(i-1) 신호를 이날 바 가격으로 체결한다(scanner=전일 scanner, contexts=체결가로
+    재작성). 이날(i) 신호는 다음 바(i+1)로 미뤄진다. 마지막 신호는 처리되는 다음 바가 없어 체결되지 않는다.
+    exits/mark-to-market는 이날(i) 가격으로 — 포지션이 체결일에야 나타난다.
+    """
+    scanned = []
+    for as_of in trading_days:
+        scanner, contexts, mark_prices, exits = await _scan_day(
+            as_of, price_data, spy_prices, vix, benchmark_prices, params, event_provider,
+            default_exit_params,
+        )
+        scanned.append((as_of, scanner, contexts, mark_prices, exits))
+
+    days: list[DayInput] = []
+    for i, (as_of, _scanner_i, _contexts_i, mark_i, exits_i) in enumerate(scanned):
+        if i == 0:
+            fill_scanner, fill_contexts = _EmptyScanner(), {}
+        else:
+            prev_as_of, prev_scanner, prev_contexts, _pm, _pe = scanned[i - 1]
+            fill_contexts = _resolve_fill_contexts(prev_contexts, price_data, prev_as_of, model, buffer)
+            fill_scanner = prev_scanner if fill_contexts else _EmptyScanner()
+        days.append(DayInput(
+            date=_date_str(as_of), scanner=fill_scanner, contexts=fill_contexts,
+            mark_prices=mark_i, exits=exits_i,
+        ))
+    return days
 
 
 async def run_historical_simulation(
@@ -200,15 +283,21 @@ async def run_historical_simulation(
     # exit_policy를 쓰면 정적 default_exit_params는 무시(이중 청산 방지) — 동적 경로가 단일 진실.
     static_exits = None if (exit_policy is not None and exit_policy.is_active) else default_exit_params
 
-    days = [
-        await _build_day(
-            as_of, price_data, spy_prices, vix, benchmark_prices,
-            params, event_provider, static_exits,
-            entry_fill_model=entry_fill_model,
-            entry_limit_buffer_pct=entry_limit_buffer_pct,
+    if entry_fill_model == "current":
+        days = [
+            await _build_day(
+                as_of, price_data, spy_prices, vix, benchmark_prices,
+                params, event_provider, static_exits,
+                entry_fill_model="current",
+            )
+            for as_of in trading_days
+        ]
+    else:
+        # opt-in 현실적 모드: 신호 다음 거래 바에 체결/포지션이 시작되도록 day를 구성(체결일 정렬).
+        days = await _build_deferred_days(
+            trading_days, price_data, spy_prices, vix, benchmark_prices,
+            params, event_provider, static_exits, entry_fill_model, entry_limit_buffer_pct,
         )
-        for as_of in trading_days
-    ]
 
     multiday = await run_phase1_multiday(
         days=days, policy=policy, account_cash=account_cash, exit_policy=exit_policy

@@ -296,7 +296,6 @@ def _feature_inputs(args):
 def _format_fill_mode_comparison(current, realistic, model) -> str:
     """current vs 현실적 진입 체결 모드 성과 비교(측정 — 실주문 없음)."""
     cp, rp = current.performance, realistic.performance
-    fill_rate = (rp.num_trades / cp.num_trades) if cp.num_trades > 0 else None
     lines = ["=" * 70, f"Entry Fill Mode Comparison: current vs {model} (측정 - 실주문 없음)", "=" * 70]
     lines.append(f"  {'metric':<18}{'current':>14}{model:>16}")
     lines.append(f"  {'trades':<18}{cp.num_trades:>14}{rp.num_trades:>16}")
@@ -304,10 +303,11 @@ def _format_fill_mode_comparison(current, realistic, model) -> str:
     lines.append(f"  {'max_drawdown':<18}{cp.max_drawdown:>13.2%}{rp.max_drawdown:>15.2%}")
     lines.append(f"  {'win_rate':<18}{cp.win_rate:>13.2%}{rp.win_rate:>15.2%}")
     lines.append(f"  {'total_pnl':<18}{cp.total_pnl:>14.2f}{rp.total_pnl:>16.2f}")
-    miss = cp.num_trades - rp.num_trades
+    delta = rp.num_trades - cp.num_trades
+    # 체결일 이연으로 $현금 타임라인이 바뀌어 진입 수가 달라질 수 있다(누락만이 아니라 증감 모두 가능).
     lines.append(
-        f"  implied entry fill rate: {('%.0f%%' % (fill_rate * 100)) if fill_rate is not None else 'n/a'} "
-        f"(missed {miss} of {cp.num_trades} entries)"
+        f"  trade count change : {delta:+d} (current {cp.num_trades} -> {model} {rp.num_trades}) "
+        f"— 진입은 다음 바에 체결(미체결 또는 현금 타임라인 변화로 증감)"
     )
     lines.append(f"  real_orders_placed : {realistic.real_orders_placed} / {current.real_orders_placed}")
     lines.append("=" * 70)

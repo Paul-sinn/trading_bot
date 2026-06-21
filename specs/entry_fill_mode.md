@@ -20,11 +20,14 @@ CRITICAL: 실브로커/Robinhood/MCP/라이브 주문 없음. real_orders_placed
   - 다음 바 결측 → 미체결(data_missing).
 - `next-open`: 다음 바 있으면 next_open 체결(marketable/high-fill, 약한 가격 통제로 명시). 없으면 미체결.
 
-## 구현(주입 지점)
-- `historical_sim._build_day`에서 contexts 구성 후, model≠current면 후보별로 price_data의 **다음 바**를 찾아:
-  - 체결가가 정해지면 `reference_price`를 그 값으로 교체(사이징 quantity는 불변).
-  - 미체결이면 `quantity=0`으로 둬 기존 RiskGate가 veto → **주문/체결/포지션 없음**(우회 없음).
-- `resolve_entry_fill(reference_price, next_bar, model, buffer) -> float | None`(순수).
+## 구현(주입 지점) + 체결일 정렬
+- `resolve_entry_fill(reference_price, next_bar, model, buffer) -> float | None`(순수): 체결가 또는 미체결(None).
+- current: `_build_day`가 같은 바에 체결(기존 동작 불변).
+- next-bar 모드(체결일 정렬): `_build_deferred_days`가 신호는 후보일에 잡되 **체결/포지션은 다음 거래 바**에
+  일어나게 day를 구성한다 — DayInput[i]는 전일(i-1) 신호를 이날 바 가격으로 체결(scanner=전일 scanner,
+  contexts=체결가로 재작성). 미체결이면 quantity=0으로 기존 RiskGate가 veto(주문/체결/포지션 없음, 우회 없음).
+  - 포지션/트레이드 entry_date = **fill_date**(다음 바). exits/time-stop·mark-to-market는 fill_date 기준
+    (체결 전 바에는 포지션이 없음). 마지막 신호는 처리되는 다음 바가 없어 체결되지 않는다.
 - 스캐너/디시전/사이징/RiskGate/phase1_flow는 손대지 않는다. 기본값 current는 경로를 바꾸지 않는다.
 
 ## 리포트(run_sim)
@@ -40,4 +43,5 @@ CRITICAL: 실브로커/Robinhood/MCP/라이브 주문 없음. real_orders_placed
 - real_orders_placed == 0.
 
 ## 비범위
-- 분/틱 체결, 부분체결, 다음날 추격, 정확한 자본 재배분/마크 타이밍 보정, 스캐너/디시전/사이징/시그널 변경.
+- 분/틱 체결, 부분체결, 다음날 추격, 정확한 자본 재배분, 비연속 거래일의 다음-바 보정,
+  스캐너/디시전/사이징/시그널 변경.
