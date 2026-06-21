@@ -28,6 +28,7 @@ class ExitReason(str, Enum):
     TRAILING_STOP_HIT = "trailing_stop_hit"
     TIME_STOP = "time_stop"
     MANUAL_SIM_EXIT = "manual_sim_exit"
+    WEEKEND_EXIT = "weekend_exit"
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ class ExitParams:
     hold_days: int | None = None
     max_hold_days: int | None = None
     manual_exit: bool = False
+    weekend_exit: bool = False       # 주말 전 강제청산(레버리지 ETF 전용 — 호출부가 설정).
     exit_shares: int | None = None  # None=전량, 아니면 부분
 
 
@@ -56,6 +58,7 @@ class ExitPolicy:
     trail_pct: float | None = None
     max_hold_days: int | None = None
     manual_exit_date: str | None = None
+    weekend_exit_symbols: frozenset[str] = frozenset()   # 주말 전 강제청산 대상(레버리지 ETF). 비면 미적용.
 
     def __post_init__(self) -> None:
         if self.stop_loss_pct is not None and not (0.0 < self.stop_loss_pct < 1.0):
@@ -73,11 +76,13 @@ class ExitPolicy:
             self.trail_pct is not None,
             self.max_hold_days is not None,
             self.manual_exit_date is not None,
+            bool(self.weekend_exit_symbols),
         ))
 
 
 def exit_params_for_position(
-    policy: ExitPolicy, *, avg_entry_price: float, hold_days: int, manual: bool = False
+    policy: ExitPolicy, *, avg_entry_price: float, hold_days: int, manual: bool = False,
+    weekend: bool = False,
 ) -> ExitParams:
     """상위 ExitPolicy + 포지션 상태(진입가/보유일)를 포지션별 ExitParams로 변환한다(순수).
 
@@ -95,6 +100,7 @@ def exit_params_for_position(
         hold_days=hold_days if policy.max_hold_days is not None else None,
         max_hold_days=policy.max_hold_days,
         manual_exit=manual,
+        weekend_exit=weekend,
     )
 
 
@@ -142,6 +148,8 @@ def evaluate_exit(*, price: float | None, shares_held: int, params: ExitParams) 
     reason: ExitReason | None = None
     if params.manual_exit:
         reason = ExitReason.MANUAL_SIM_EXIT
+    elif params.weekend_exit:
+        reason = ExitReason.WEEKEND_EXIT
     elif params.stop_price is not None and price <= params.stop_price:
         reason = ExitReason.STOP_LOSS_HIT
     elif (

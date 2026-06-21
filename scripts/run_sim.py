@@ -183,11 +183,13 @@ def _build_exit_policy(args) -> ExitPolicy | None:
 
     잘못된 값(범위 밖 비율/0 이하 일수)은 ExitPolicy가 ValueError → DataAdapterError로 감싸 fail-closed.
     """
+    weekend_syms = frozenset(getattr(args, "weekend_exit_symbols", None) or ())
     if not any((
         args.stop_loss_pct is not None,
         args.trailing_stop_pct is not None,
         args.max_holding_days is not None,
         args.manual_exit_date is not None,
+        bool(weekend_syms),
     )):
         return None
     try:
@@ -196,6 +198,7 @@ def _build_exit_policy(args) -> ExitPolicy | None:
             trail_pct=args.trailing_stop_pct,
             max_hold_days=args.max_holding_days,
             manual_exit_date=args.manual_exit_date,
+            weekend_exit_symbols=weekend_syms,
         )
     except ValueError as exc:
         raise DataAdapterError(f"청산 설정 오류: {exc}") from exc

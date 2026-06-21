@@ -39,6 +39,7 @@ class DayInput:
     decision_provider: object | None = None
     mark_prices: dict[str, float] | None = None  # 그날 종가(mark-to-market). 없으면 cost_basis + data_missing.
     exits: dict[str, ExitParams] = field(default_factory=dict)  # 그날 청산 평가할 보유 심볼별 파라미터.
+    pre_weekend: bool = False  # 주말 직전 거래일(레버리지 ETF 주말청산용 — 빌더가 설정).
 
 
 @dataclass(frozen=True)
@@ -102,6 +103,8 @@ async def run_phase1_multiday(
                     hold_days=hold_days.get(sym, 0),
                     manual=(exit_policy.manual_exit_date is not None
                             and day.date == exit_policy.manual_exit_date),
+                    # 레버리지 ETF만 주말 직전 강제청산(일반주는 weekend_exit_symbols에 없어 미적용).
+                    weekend=(day.pre_weekend and sym in exit_policy.weekend_exit_symbols),
                 )
                 for sym, pos in portfolio.positions.items()
             }

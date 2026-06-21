@@ -123,6 +123,21 @@ def _date_str(as_of) -> str:
     return str(as_of.date()) if hasattr(as_of, "date") else str(as_of)
 
 
+def _pre_weekend_flags(trading_days) -> list[bool]:
+    """각 거래일이 '주말 직전'인지(다음 거래일까지 사이에 토/일이 끼면 True). 마지막 날은 금요일이면 True."""
+    ts = [pd.Timestamp(d) for d in trading_days]
+    flags: list[bool] = []
+    for i, d in enumerate(ts):
+        if i + 1 < len(ts):
+            nxt = ts[i + 1]
+            # d 다음날 ~ 다음 거래일 사이에 토(5)/일(6)이 있으면 주말 직전.
+            spanned = pd.date_range(d + pd.Timedelta(days=1), nxt, freq="D")
+            flags.append(any(x.weekday() >= 5 for x in spanned))
+        else:
+            flags.append(d.weekday() == 4)  # 마지막 날: 금요일이면 주말 직전.
+    return flags
+
+
 class _EmptyScanner:
     """후보 없는 스캐너(체결할 신호가 없는 날 — deferred 모드 첫 바)."""
 
@@ -298,6 +313,11 @@ async def run_historical_simulation(
             trading_days, price_data, spy_prices, vix, benchmark_prices,
             params, event_provider, static_exits, entry_fill_model, entry_limit_buffer_pct,
         )
+
+    # 주말 직전 거래일 표시(레버리지 ETF 주말청산용 — exit_policy.weekend_exit_symbols 있을 때만 효과).
+    if exit_policy is not None and exit_policy.weekend_exit_symbols:
+        flags = _pre_weekend_flags(trading_days)
+        days = [replace(d, pre_weekend=f) for d, f in zip(days, flags)]
 
     multiday = await run_phase1_multiday(
         days=days, policy=policy, account_cash=account_cash, exit_policy=exit_policy
