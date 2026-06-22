@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     max_total_intended_exposure_usd: float = 5000.0
     live_strategy_id: str = "ts_momentum_pullback_v1"
 
+    # Broker 스냅샷(read-only 워커 브리지). ExecutionGate dry-run이 최신 스냅샷의
+    # buying_power/open_orders로 추가 검증한다. 스냅샷은 워커가 적재하며 backend는 읽기만 한다.
+    broker_snapshot_max_age_seconds: int = 3600  # 이보다 오래되면 stale로 간주.
+    reject_on_stale_snapshot: bool = False  # 기본: stale면 경고만(report_only). True면 reject.
+
     claude_api_key: str | None = None
     database_url: str = "sqlite:///./trading_bot.db"
     redis_url: str = "redis://localhost:6379/0"

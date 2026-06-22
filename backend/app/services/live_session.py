@@ -37,6 +37,7 @@ from backend.app.services.candidate_pipeline import (
     Candidate,
     CandidatePipeline,
 )
+from backend.app.services.control_flags import ControlFlags, write_control_flags
 from backend.app.services.execution_gate import OrderIntent
 from backend.app.services.live_scan import LiveScanLoop, ScanEvent, load_scan_events
 from backend.app.services.market_data import (
@@ -253,6 +254,7 @@ class LiveSessionManager:
         self._state.daily_order_count = 0
         self._state.real_orders_placed = 0
         self._write_session_event("start")
+        self._write_control_flags("start")
         self._start_scan(provider)
         return self._result(STATUS_OK)
 
@@ -264,6 +266,7 @@ class LiveSessionManager:
         self._stop_scan()
         self._try_cancel_open_orders()  # 어댑터 있으면 시도(없으면 흡수). 청산은 안 함.
         self._write_session_event("stop")
+        self._write_control_flags(f"stop:{reason}")
         self._upsert_daily_record()
         return self._result(STATUS_OK)
 
@@ -275,6 +278,7 @@ class LiveSessionManager:
         self._stop_scan()
         self._try_cancel_open_orders()
         self._write_session_event("emergency_halt")
+        self._write_control_flags("emergency_halt")
         self._upsert_daily_record()
         return self._result(STATUS_OK)
 
@@ -368,6 +372,23 @@ class LiveSessionManager:
             adapter.cancel_open_orders()
         except RobinhoodMcpNotConfigured:
             return  # 미연동 → 흡수(상태 전이는 이미 완료)
+
+    def _write_control_flags(self, reason: str) -> None:
+        """현재 세션 상태를 control_flags.json에 반영(워커가 액션 전 확인). 주문 없음."""
+        running = self._state.automation_running
+        halt = self._state.emergency_halt
+        # 정지/비상정지면 신규 주문·LLM 차단. 가동중이면 허용(단, 어떤 모드에서도 실주문 경로 없음).
+        block = (not running) or halt
+        write_control_flags(
+            ControlFlags(
+                automation_running=running,
+                emergency_halt=halt,
+                block_new_orders=block,
+                block_new_llm_calls=block,
+                reason=reason,
+            ),
+            reports_dir=self._reports_dir,
+        )
 
     def _write_session_event(self, event: str) -> None:
         append_session_event(

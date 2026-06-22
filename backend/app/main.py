@@ -7,7 +7,7 @@ REST 라우터 등록 + WebSocket 엔드포인트 + 로컬 frontend 허용 CORS.
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.api import goal_plan, health, live, portfolio, shadow
+from backend.app.api import broker, goal_plan, health, live, portfolio, shadow
 from backend.app.ws.ticker import parse_symbols, ticker_stream
 
 app = FastAPI(title="Custom Trading Bot API")
@@ -29,6 +29,7 @@ app.router.routes.extend(portfolio.router.routes)
 app.router.routes.extend(goal_plan.router.routes)
 app.router.routes.extend(shadow.router.routes)
 app.router.routes.extend(live.router.routes)
+app.router.routes.extend(broker.router.routes)
 
 
 @app.websocket("/ws/ticker")

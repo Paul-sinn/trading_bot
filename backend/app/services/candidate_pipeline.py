@@ -18,6 +18,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from backend.app.core.config import Settings
+from backend.app.services.broker_snapshot import BrokerSnapshot, latest_snapshot
 from backend.app.services.execution_gate import (
     ExecutionCaps,
     ExecutionGate,
@@ -144,6 +145,10 @@ class CandidatePipeline:
             max_total_intended_exposure_usd=s.max_total_intended_exposure_usd,
         )
 
+    def _broker_snapshot(self) -> BrokerSnapshot | None:
+        """ExecutionGate dry-run에 쓸 최신 브로커 스냅샷(읽기 전용 — MCP 호출 없음)."""
+        return latest_snapshot(reports_dir=self._reports_dir)
+
     def _maybe_reset_day(self) -> None:
         today = _now().date().isoformat()
         if today != self._ai_day:
@@ -240,6 +245,9 @@ class CandidatePipeline:
             caps=self._caps(),
             automation_running=automation_running,
             emergency_halt=emergency_halt,
+            broker_snapshot=self._broker_snapshot(),
+            snapshot_max_age_seconds=self._settings.broker_snapshot_max_age_seconds,
+            reject_on_stale_snapshot=self._settings.reject_on_stale_snapshot,
         )
         if result.status == "accepted_dry_run":
             cand.status = "approved"

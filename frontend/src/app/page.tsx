@@ -3,9 +3,11 @@
 // 데이터: getPortfolio()(REST) 시도 → 실패 시 mock 폴백 (백엔드 없이도 graceful).
 import { Card } from "@/components/ui/Card";
 import { Gauge } from "@/components/ui/Gauge";
+import { BrokerSnapshotPanel } from "@/components/dashboard/BrokerSnapshot";
 import { LiveControls } from "@/components/dashboard/LiveControls";
 import { LiveTicker } from "@/components/dashboard/LiveTicker";
 import {
+  getBrokerSnapshot,
   getCandidates,
   getLiveStatus,
   getOrderIntents,
@@ -37,6 +39,7 @@ export default async function DashboardPage() {
   const scanEvents = (await getScanEvents(50)) ?? [];
   const candidates = (await getCandidates(50)) ?? [];
   const orderIntents = (await getOrderIntents(50)) ?? [];
+  const brokerSnapshot = await getBrokerSnapshot(); // null이면 패널이 "없음" 경고 표시
   const wr = winRate();
   const risk = exposurePct(portfolio.total_equity, portfolio.cash);
 
@@ -89,6 +92,9 @@ export default async function DashboardPage() {
           initialOrderIntents={orderIntents}
         />
       </Card>
+
+      {/* 브로커 스냅샷(read-only 워커 브리지) — 잔고/포지션/미체결, 주문 경로 없음 */}
+      <BrokerSnapshotPanel snapshot={brokerSnapshot} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* 실시간 리스크% 게이지 */}

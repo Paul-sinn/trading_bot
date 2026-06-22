@@ -419,6 +419,22 @@ export interface LiveDailyRecord {
   real_orders_placed: number;
 }
 
+/** backend: services/broker_snapshot.py BrokerSnapshot. read-only 워커 적재 — real_orders_placed=0. */
+export interface BrokerSnapshot {
+  provider: string;
+  timestamp: string;
+  source: string;
+  account_last4: string;
+  total_value: number | null;
+  cash: number | null;
+  buying_power: number | null;
+  positions: Record<string, unknown>[];
+  open_orders: Record<string, unknown>[];
+  quotes: Record<string, unknown>[];
+  errors: string[];
+  real_orders_placed: number;
+}
+
 /** backend: services/live_records.py LiveWeeklyRecord. */
 export interface LiveWeeklyRecord {
   week_start: string;

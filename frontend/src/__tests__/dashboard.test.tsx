@@ -11,6 +11,7 @@ const getScanEvents = vi.fn().mockResolvedValue([]);
 const getCandidates = vi.fn().mockResolvedValue([]);
 const getOrderIntents = vi.fn().mockResolvedValue([]);
 const getAiStatus = vi.fn().mockResolvedValue(null);
+const getBrokerSnapshot = vi.fn().mockResolvedValue(null);
 vi.mock("@/lib/api", () => ({
   getPortfolio: vi.fn().mockResolvedValue(mockPortfolio),
   getLiveStatus: vi.fn().mockResolvedValue(mockLiveStatus),
@@ -18,6 +19,7 @@ vi.mock("@/lib/api", () => ({
   getCandidates: (...args: unknown[]) => getCandidates(...args),
   getOrderIntents: (...args: unknown[]) => getOrderIntents(...args),
   getAiStatus: (...args: unknown[]) => getAiStatus(...args),
+  getBrokerSnapshot: (...args: unknown[]) => getBrokerSnapshot(...args),
   startLive: (...args: unknown[]) => startLive(...args),
   stopLive: (...args: unknown[]) => stopLive(...args),
   emergencyHalt: (...args: unknown[]) => emergencyHalt(...args),
@@ -77,6 +79,16 @@ describe("① 대시보드 페이지", () => {
       screen.getByText("Mock LLM only — no paid API, no real orders"),
     ).toBeInTheDocument();
     expect(screen.getByText(/AI cost = \$0\.00/)).toBeInTheDocument();
+  });
+
+  it("브로커 스냅샷 패널(read-only 라벨)을 렌더하고 스냅샷 없으면 경고를 표시한다", async () => {
+    render(await DashboardPage());
+    expect(screen.getByText("브로커 스냅샷")).toBeInTheDocument();
+    expect(
+      screen.getByText("read-only broker snapshot — no orders"),
+    ).toBeInTheDocument();
+    // null 스냅샷 → "없음" 경고
+    expect(screen.getByText(/브로커 스냅샷 없음/)).toBeInTheDocument();
   });
 
   it("렌더(=새로고침)는 절대 매매를 시작하거나 주문을 내지 않는다", async () => {

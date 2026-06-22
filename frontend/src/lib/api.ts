@@ -2,6 +2,7 @@
 // backend(SSOT)만 호출한다 (CLAUDE.md CRITICAL / ADR-001).
 import type {
   AiStatus,
+  BrokerSnapshot,
   GoalPlan,
   GoalPlanRecord,
   GoalPlanRequest,
@@ -184,4 +185,20 @@ export function getOrderIntents(limit = 50): Promise<OrderIntent[] | null> {
 /** AI 예산/쿨다운 상태(읽기 전용 — LLM 호출 없음, cost 0.00). 실패 시 null. */
 export function getAiStatus(): Promise<AiStatus | null> {
   return apiFetch<AiStatus>("/api/ai/status");
+}
+
+// --- 브로커 스냅샷(read-only 워커 브리지) ---
+// CRITICAL: backend는 MCP를 직접 호출하지 않고 워커가 적재한 reports/broker_snapshots.jsonl만 읽는다.
+// 주문 경로 없음 — real_orders_placed=0. 프론트는 backend REST만 호출한다.
+
+/** 최신 브로커 스냅샷(읽기 전용 — MCP 호출 없음). 없거나 실패 시 null. */
+export function getBrokerSnapshot(): Promise<BrokerSnapshot | null> {
+  return apiFetch<BrokerSnapshot>("/api/broker/snapshot");
+}
+
+/** 최근 브로커 스냅샷 목록(읽기 전용 — MCP 호출 없음). 실패 시 null. */
+export function getBrokerSnapshots(
+  limit = 50,
+): Promise<BrokerSnapshot[] | null> {
+  return apiFetch<BrokerSnapshot[]>(`/api/broker/snapshots?limit=${limit}`);
 }
