@@ -4,10 +4,15 @@ import type {
   GoalPlan,
   GoalPlanRecord,
   GoalPlanRequest,
+  LiveActionResult,
+  LiveDailyRecord,
+  LiveSessionState,
+  LiveWeeklyRecord,
   MarketDirection,
   Portfolio,
   ShadowReportView,
   ShadowRunResult,
+  TradingMode,
   Trade,
   WeeklyReport,
 } from "@/types";
@@ -106,4 +111,53 @@ export function applyGoalPlan(
     method: "POST",
     body: JSON.stringify(req),
   });
+}
+
+// --- 라이브 트레이딩 세션 제어 ---
+// CRITICAL: status/daily/weekly는 읽기 전용(주문·매매 시작 없음). 매매 시작은 startLive 버튼만.
+// 실주문 경로 없음 — backend가 Robinhood MCP 어댑터를 통하며, 미연동 시 NOT_READY_NO_MCP.
+
+/** 라이브 세션 상태(읽기 전용). 페이지 로드/새로고침이 매매를 시작하지 않는다. 실패 시 null. */
+export function getLiveStatus(): Promise<LiveSessionState | null> {
+  return apiFetch<LiveSessionState>("/api/live/status");
+}
+
+/** 라이브 세션 시작(명시적 버튼 클릭 전용). MCP 없으면 status=NOT_READY_NO_MCP. 실패 시 null. */
+export function startLive(
+  mode: TradingMode = "report_only",
+): Promise<LiveActionResult | null> {
+  return apiFetch<LiveActionResult>("/api/live/start", {
+    method: "POST",
+    body: JSON.stringify({ mode }),
+  });
+}
+
+/** 라이브 세션 정지 — 즉시 신규 주문 차단(포지션 자동청산 없음). 실패 시 null. */
+export function stopLive(
+  reason?: string | null,
+): Promise<LiveActionResult | null> {
+  return apiFetch<LiveActionResult>("/api/live/stop", {
+    method: "POST",
+    body: JSON.stringify({ reason: reason ?? null }),
+  });
+}
+
+/** 비상 정지 — emergency_halt + 즉시 신규 주문 차단. 실패 시 null. */
+export function emergencyHalt(): Promise<LiveActionResult | null> {
+  return apiFetch<LiveActionResult>("/api/live/emergency-halt", {
+    method: "POST",
+  });
+}
+
+/** 일간 라이브 기록(읽기 전용 — 주문 없음). 실패 시 null. */
+export function getLiveDaily(
+  date?: string | null,
+): Promise<LiveDailyRecord | null> {
+  const qs = date ? `?date=${encodeURIComponent(date)}` : "";
+  return apiFetch<LiveDailyRecord>(`/api/live/daily-record${qs}`);
+}
+
+/** 주간 라이브 기록(일간 집계 — 읽기 전용). 실패 시 null. */
+export function getLiveWeekly(): Promise<LiveWeeklyRecord[] | null> {
+  return apiFetch<LiveWeeklyRecord[]>("/api/live/weekly-record");
 }

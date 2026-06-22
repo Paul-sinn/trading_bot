@@ -16,6 +16,9 @@ class Settings(BaseSettings):
 
     # Robinhood MCP provider 토글. 안전 기본값 False → MockProvider(실거래/실조회 없음).
     robinhood_mcp_enabled: bool = False
+    # 라이브 자동매매(live_auto) 허용 마스터 스위치. 안전 기본값 False → live_auto 시작 차단.
+    # report_only 시작은 이 값과 무관하게 가능하지만, 어떤 모드에서도 실주문 경로는 없다(MCP 미연동).
+    live_trading_enabled: bool = False
     claude_api_key: str | None = None
     database_url: str = "sqlite:///./trading_bot.db"
     redis_url: str = "redis://localhost:6379/0"

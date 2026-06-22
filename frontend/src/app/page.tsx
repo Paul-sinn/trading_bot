@@ -3,10 +3,10 @@
 // 데이터: getPortfolio()(REST) 시도 → 실패 시 mock 폴백 (백엔드 없이도 graceful).
 import { Card } from "@/components/ui/Card";
 import { Gauge } from "@/components/ui/Gauge";
-import { BotToggle } from "@/components/dashboard/BotToggle";
+import { LiveControls } from "@/components/dashboard/LiveControls";
 import { LiveTicker } from "@/components/dashboard/LiveTicker";
-import { getPortfolio } from "@/lib/api";
-import { mockPortfolio, mockTrades } from "@/lib/mock";
+import { getLiveStatus, getPortfolio } from "@/lib/api";
+import { mockLiveStatus, mockPortfolio, mockTrades } from "@/lib/mock";
 import { formatUsd, pnlColorClass } from "@/lib/utils";
 
 // 청산된 거래(exit_price != null) 중 수익(realized_pnl > 0) 비율(%). 0건 → 0.
@@ -24,7 +24,10 @@ function exposurePct(totalEquity: number, cash: number): number {
 }
 
 export default async function DashboardPage() {
+  // 읽기 전용 fetch만 한다. 페이지 로드/새로고침은 절대 매매를 시작하지 않는다(매매 시작은
+  // LiveControls의 "거래 시작" 버튼 클릭 전용). 백엔드 없으면 mock(정지) 폴백.
   const portfolio = (await getPortfolio()) ?? mockPortfolio;
+  const liveStatus = (await getLiveStatus()) ?? mockLiveStatus;
   const wr = winRate();
   const risk = exposurePct(portfolio.total_equity, portfolio.cash);
 
@@ -32,7 +35,6 @@ export default async function DashboardPage() {
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-white">대시보드</h1>
-        <BotToggle initialOn={true} />
       </div>
 
       {/* 포트폴리오 요약: 총자산 / 오늘 손익 / 승률 */}
@@ -60,6 +62,19 @@ export default async function DashboardPage() {
           </div>
         </Card>
       </div>
+
+      {/* 라이브 트레이딩 세션 제어: 시작/정지/비상정지 + 자동화·브로커 상태 */}
+      <Card className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-medium text-neutral-400">
+            라이브 트레이딩
+          </div>
+          <div className="text-xs text-neutral-600">
+            실주문 경로 없음 · Robinhood MCP 어댑터 경계
+          </div>
+        </div>
+        <LiveControls initialStatus={liveStatus} />
+      </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* 실시간 리스크% 게이지 */}

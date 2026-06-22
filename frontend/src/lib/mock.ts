@@ -4,6 +4,7 @@
 import type {
   GoalPlan,
   Goals,
+  LiveSessionState,
   MarketDirection,
   Portfolio,
   RiskProfile,
@@ -11,6 +12,24 @@ import type {
   Trade,
   WeeklyReport,
 } from "@/types";
+
+// 백엔드 없이도 대시보드가 렌더되도록 하는 안전 기본 라이브 상태(정지 + 브로커 미연결).
+// 실제 상태는 getLiveStatus()로 받는다. mock은 "자동화 꺼짐"이 기본(매매 시작 안 함).
+export const mockLiveStatus: LiveSessionState = {
+  automation_running: false,
+  trading_mode: "report_only",
+  session_id: null,
+  started_at: null,
+  stopped_at: null,
+  stop_reason: null,
+  emergency_halt: false,
+  live_enabled: false,
+  broker_connected: false,
+  last_heartbeat: null,
+  real_orders_placed: 0,
+  daily_order_count: 0,
+  current_exposure: 0,
+};
 
 export const mockPortfolio: Portfolio = {
   // backend: cash 5000 + AAPL(10*195) + TSLA(5*240) = 8150

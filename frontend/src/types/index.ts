@@ -263,3 +263,60 @@ export interface ShadowRunResult {
   tail: string;
   real_orders_placed: number;
 }
+
+/** backend: services/live_session.py LiveSessionState. 라이브 자동매매 세션 상태(실주문 0). */
+export type TradingMode = "report_only" | "live_auto";
+
+export interface LiveSessionState {
+  automation_running: boolean;
+  trading_mode: TradingMode;
+  session_id: string | null;
+  started_at: string | null;
+  stopped_at: string | null;
+  stop_reason: string | null;
+  emergency_halt: boolean;
+  live_enabled: boolean;
+  broker_connected: boolean;
+  last_heartbeat: string | null;
+  real_orders_placed: number;
+  daily_order_count: number;
+  current_exposure: number;
+}
+
+/** backend: services/live_session.py LiveActionResult. start/stop/halt 결과(status로 분기). */
+export interface LiveActionResult {
+  status: string;
+  state: LiveSessionState;
+  real_orders_placed: number;
+}
+
+/** backend: services/live_records.py LiveDailyRecord. */
+export interface LiveDailyRecord {
+  date: string;
+  session_ids: string[];
+  started_at: string | null;
+  stopped_at: string | null;
+  orders_submitted: number;
+  orders_filled: number;
+  orders_cancelled: number;
+  realized_pnl: number;
+  unrealized_pnl: number | null;
+  win_rate: number | null;
+  max_drawdown_intraday: number | null;
+  stop_reason: string | null;
+  notes: string;
+  real_orders_placed: number;
+}
+
+/** backend: services/live_records.py LiveWeeklyRecord. */
+export interface LiveWeeklyRecord {
+  week_start: string;
+  week_end: string;
+  trading_days: number;
+  total_orders: number;
+  filled_orders: number;
+  realized_pnl: number;
+  win_rate: number | null;
+  max_daily_loss: number;
+  notes: string;
+}
