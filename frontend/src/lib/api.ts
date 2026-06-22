@@ -6,6 +6,7 @@ import type {
   GoalPlanRequest,
   LiveActionResult,
   LiveDailyRecord,
+  LiveScanEvent,
   LiveSessionState,
   LiveWeeklyRecord,
   MarketDirection,
@@ -160,4 +161,9 @@ export function getLiveDaily(
 /** 주간 라이브 기록(일간 집계 — 읽기 전용). 실패 시 null. */
 export function getLiveWeekly(): Promise<LiveWeeklyRecord[] | null> {
   return apiFetch<LiveWeeklyRecord[]>("/api/live/weekly-record");
+}
+
+/** 최근 라이브 스캔 이벤트(읽기 전용 — 스캔 시작 안 함, 주문 없음). 실패 시 null. */
+export function getScanEvents(limit = 50): Promise<LiveScanEvent[] | null> {
+  return apiFetch<LiveScanEvent[]>(`/api/live/scan-events?limit=${limit}`);
 }

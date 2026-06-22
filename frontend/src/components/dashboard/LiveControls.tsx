@@ -11,11 +11,13 @@ import {
   startLive,
   stopLive,
 } from "@/lib/api";
-import type { LiveSessionState } from "@/types";
+import type { LiveScanEvent, LiveSessionState } from "@/types";
 
 interface LiveControlsProps {
   /** 서버에서 받은 초기 상태(읽기 전용). 실패 시 호출부가 mock(정지) 폴백. */
   initialStatus: LiveSessionState;
+  /** 서버에서 받은 초기 스캔 이벤트(읽기 전용). 스캔 오류 표시에 사용. */
+  initialScanEvents?: LiveScanEvent[];
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -26,10 +28,17 @@ const STATUS_LABEL: Record<string, string> = {
   BLOCKED_INVALID_MODE: "잘못된 모드",
 };
 
-export function LiveControls({ initialStatus }: LiveControlsProps) {
+export function LiveControls({
+  initialStatus,
+  initialScanEvents = [],
+}: LiveControlsProps) {
   const [status, setStatus] = useState<LiveSessionState>(initialStatus);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  const scanErrors = initialScanEvents.filter(
+    (e) => e.scan_status === "ERROR",
+  );
 
   async function onStart() {
     setBusy(true);
@@ -72,6 +81,16 @@ export function LiveControls({ initialStatus }: LiveControlsProps) {
 
   return (
     <div className="space-y-4">
+      {/* report_only 모니터링 라벨 — 실주문 없음 명시 */}
+      <div className="flex items-center justify-between rounded-md bg-neutral-900 px-3 py-2">
+        <span className="text-xs font-medium text-amber-400">
+          report_only monitoring — no real orders
+        </span>
+        <span className="text-xs tabular-nums text-neutral-500">
+          real_orders_placed = {status.real_orders_placed}
+        </span>
+      </div>
+
       {/* 상태 요약 */}
       <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
         <StatusItem
@@ -101,6 +120,39 @@ export function LiveControls({ initialStatus }: LiveControlsProps) {
         />
       </div>
 
+      {/* 시장데이터 + 라이브 스캔 상태 */}
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-neutral-800 pt-3 text-sm sm:grid-cols-3">
+        <StatusItem label="시장데이터" value={status.market_data_provider || "—"} />
+        <StatusItem
+          label="데이터 상태"
+          value={status.market_data_status || "—"}
+          tone={status.market_data_status === "available" ? "good" : "warn"}
+        />
+        <StatusItem
+          label="라이브 스캔"
+          value={status.live_scan_running ? "가동중" : "정지"}
+          tone={status.live_scan_running ? "good" : "muted"}
+        />
+        <StatusItem
+          label="마지막 스캔"
+          value={fmtScanTime(status.last_scan_at)}
+          mono
+        />
+        <StatusItem
+          label="스캔 이벤트 수"
+          value={String(status.last_scan_event_count)}
+        />
+        <StatusItem
+          label="BUY 후보"
+          value={
+            status.latest_buy_candidates.length
+              ? status.latest_buy_candidates.join(", ")
+              : "—"
+          }
+          tone={status.latest_buy_candidates.length ? "good" : "muted"}
+        />
+      </div>
+
       {/* 제어 버튼 */}
       <div className="flex flex-wrap items-center gap-2">
         <Button
@@ -122,11 +174,31 @@ export function LiveControls({ initialStatus }: LiveControlsProps) {
         </Button>
       </div>
 
+      {scanErrors.length > 0 && (
+        <div className="space-y-1 rounded-md border border-red-900/50 bg-red-950/30 px-3 py-2">
+          <div className="text-xs font-medium text-[#ef4444]">
+            최근 스캔 오류 ({scanErrors.length})
+          </div>
+          <div className="text-xs tabular-nums text-neutral-400">
+            {scanErrors
+              .slice(-3)
+              .map((e) => `${e.symbol}: ${e.reason}`)
+              .join(" · ")}
+          </div>
+        </div>
+      )}
+
       {message && (
         <div className="text-xs tabular-nums text-neutral-400">{message}</div>
       )}
     </div>
   );
+}
+
+function fmtScanTime(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleTimeString();
 }
 
 function StatusItem({

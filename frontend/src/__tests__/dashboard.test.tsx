@@ -7,9 +7,11 @@ import { mockLiveStatus, mockPortfolio } from "@/lib/mock";
 const startLive = vi.fn();
 const stopLive = vi.fn();
 const emergencyHalt = vi.fn();
+const getScanEvents = vi.fn().mockResolvedValue([]);
 vi.mock("@/lib/api", () => ({
   getPortfolio: vi.fn().mockResolvedValue(mockPortfolio),
   getLiveStatus: vi.fn().mockResolvedValue(mockLiveStatus),
+  getScanEvents: (...args: unknown[]) => getScanEvents(...args),
   startLive: (...args: unknown[]) => startLive(...args),
   stopLive: (...args: unknown[]) => stopLive(...args),
   emergencyHalt: (...args: unknown[]) => emergencyHalt(...args),
@@ -51,6 +53,16 @@ describe("① 대시보드 페이지", () => {
     render(await DashboardPage());
     expect(screen.getByText("자동화")).toBeInTheDocument();
     expect(screen.getByText("브로커 연결")).toBeInTheDocument();
+  });
+
+  it("시장데이터 provider·라이브 스캔 상태를 표시한다", async () => {
+    render(await DashboardPage());
+    expect(screen.getByText("시장데이터")).toBeInTheDocument();
+    expect(screen.getByText("라이브 스캔")).toBeInTheDocument();
+    // report_only 모니터링 라벨(실주문 없음)
+    expect(
+      screen.getByText("report_only monitoring — no real orders"),
+    ).toBeInTheDocument();
   });
 
   it("렌더(=새로고침)는 절대 매매를 시작하거나 주문을 내지 않는다", async () => {

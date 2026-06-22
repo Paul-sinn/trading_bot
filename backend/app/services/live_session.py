@@ -16,11 +16,12 @@ spec: specs/live_session.md
 from __future__ import annotations
 
 import uuid
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.app.core.config import Settings
 from backend.app.services.live_records import (
@@ -30,6 +31,12 @@ from backend.app.services.live_records import (
     append_session_event,
     load_daily_records,
     upsert_daily_record,
+)
+from backend.app.services.live_scan import LiveScanLoop, ScanEvent, load_scan_events
+from backend.app.services.market_data import (
+    MarketDataProvider,
+    MarketDataProviderNotConfigured,
+    get_market_data_provider,
 )
 from backend.app.services.robinhood_mcp import (
     RobinhoodMcpAdapter,
@@ -42,6 +49,7 @@ TradingMode = Literal["report_only", "live_auto"]
 # 액션 결과 상태 코드.
 STATUS_OK = "OK"
 STATUS_NOT_READY_NO_MCP = "NOT_READY_NO_MCP"
+STATUS_NOT_READY_BAD_PROVIDER = "NOT_READY_BAD_PROVIDER"
 STATUS_BLOCKED_LIVE_DISABLED = "BLOCKED_LIVE_DISABLED"
 STATUS_BLOCKED_EMERGENCY_HALT = "BLOCKED_EMERGENCY_HALT"
 STATUS_BLOCKED_INVALID_MODE = "BLOCKED_INVALID_MODE"
@@ -69,6 +77,13 @@ class LiveSessionState(BaseModel):
     real_orders_placed: int = 0
     daily_order_count: int = 0
     current_exposure: float = 0.0
+    # 라이브 시장데이터 + report_only 스캔 루프 상태(모니터링 전용 — 주문 없음).
+    market_data_provider: str = ""
+    market_data_status: str = ""
+    live_scan_running: bool = False
+    last_scan_at: str | None = None
+    last_scan_event_count: int = 0
+    latest_buy_candidates: list[str] = Field(default_factory=list)
 
 
 class LiveActionResult(BaseModel):
@@ -86,13 +101,20 @@ class LiveSessionManager:
         self,
         *,
         adapter: RobinhoodMcpAdapter | None = None,
+        market_data: MarketDataProvider | None = None,
         settings: Settings | None = None,
         reports_dir: Path | None = None,
     ) -> None:
         self._adapter = adapter
+        self._market_data = market_data
         self._settings = settings
         self._reports_dir = reports_dir
         self._state = LiveSessionState()
+        # report_only 스캔 루프(daemon 스레드 + stop flag). 시작 전엔 None.
+        self._scan_loop: LiveScanLoop | None = None
+        self._scan_thread: threading.Thread | None = None
+        self._scan_stop = threading.Event()
+        self._scan_lock = threading.Lock()
 
     # --- 의존성 헬퍼(주입 우선, 없으면 fresh) ---
     def _get_settings(self) -> Settings:
@@ -100,6 +122,18 @@ class LiveSessionManager:
 
     def _get_adapter(self) -> RobinhoodMcpAdapter:
         return self._adapter or get_mcp_adapter(self._get_settings())
+
+    def _provider_status(self) -> tuple[MarketDataProvider | None, str, str]:
+        """(provider, name, status). 알 수 없는 provider → (None, raw_name, 'invalid')."""
+        if self._market_data is not None:
+            st = self._market_data.provider_status()
+            return self._market_data, self._market_data.name, ("available" if st.available else st.detail or "unavailable")
+        try:
+            provider = get_market_data_provider(self._get_settings())
+        except MarketDataProviderNotConfigured:
+            return None, str(self._get_settings().market_data_provider), "invalid"
+        st = provider.provider_status()
+        return provider, provider.name, ("available" if st.available else st.detail or "unavailable")
 
     def _adapter_available(self, adapter: RobinhoodMcpAdapter) -> bool:
         try:
@@ -126,43 +160,59 @@ class LiveSessionManager:
     def weekly_records(self) -> list[LiveWeeklyRecord]:
         return aggregate_weekly(load_daily_records(reports_dir=self._reports_dir))
 
-    # --- 읽기 전용: UI 새로고침이 매매를 시작하지 않는다 ---
+    # --- 읽기 전용: UI 새로고침이 매매(스캔)를 시작하지 않는다 ---
     def status(self) -> LiveSessionState:
         settings = self._get_settings()
         adapter = self._get_adapter()
-        # 비파괴 갱신만(상태 전이 없음).
+        # 비파괴 갱신만(상태 전이/스캔 시작 없음).
         self._state.live_enabled = settings.live_trading_enabled
         self._state.broker_connected = self._adapter_available(adapter)
+        _, provider_name, provider_status = self._provider_status()
+        self._state.market_data_provider = provider_name
+        self._state.market_data_status = provider_status
         self._state.last_heartbeat = _now_iso()
         self._state.real_orders_placed = 0  # 불변식 강제
         return self._state.model_copy()
+
+    # --- 스캔 이벤트 조회(읽기 전용 — 스캔 시작 안 함, 주문 없음) ---
+    def scan_events(self, limit: int = 50) -> list[ScanEvent]:
+        return load_scan_events(limit=limit, reports_dir=self._reports_dir)
 
     def start(self, mode: TradingMode = "report_only") -> LiveActionResult:
         settings = self._get_settings()
         self._state.live_enabled = settings.live_trading_enabled
 
-        # preflight (하나라도 실패 시 automation_running 불변)
-        if mode == "live_auto" and not settings.live_trading_enabled:
-            return self._result(STATUS_BLOCKED_LIVE_DISABLED)
+        # 공통 preflight (하나라도 실패 시 automation_running 불변)
         if self._state.emergency_halt:
             return self._result(STATUS_BLOCKED_EMERGENCY_HALT)
         if mode not in _VALID_MODES:
             return self._result(STATUS_BLOCKED_INVALID_MODE)
 
-        adapter = self._get_adapter()
-        available = self._adapter_available(adapter)
-        self._state.broker_connected = available
-        if not available:
-            # MCP 미연동 → 크래시 없이 명확한 NOT_READY. automation_running 불변(false).
-            return self._result(STATUS_NOT_READY_NO_MCP)
+        # 시장데이터 provider는 두 모드 공통 필수. 알 수 없으면 fail-closed.
+        provider, provider_name, provider_status = self._provider_status()
+        self._state.market_data_provider = provider_name
+        self._state.market_data_status = provider_status
+        if provider is None:
+            return self._result(STATUS_NOT_READY_BAD_PROVIDER)
 
-        # 어댑터 있으면 계좌/매수력/포지션 프로브(실패해도 주문 경로 없음).
-        try:
-            adapter.get_account_status()
-            adapter.get_buying_power()
-            adapter.get_positions()
-        except RobinhoodMcpNotConfigured:
-            return self._result(STATUS_NOT_READY_NO_MCP)
+        if mode == "live_auto":
+            # live_auto: LIVE_TRADING_ENABLED + Robinhood MCP 필요(없으면 NOT_READY_NO_MCP).
+            if not settings.live_trading_enabled:
+                return self._result(STATUS_BLOCKED_LIVE_DISABLED)
+            adapter = self._get_adapter()
+            available = self._adapter_available(adapter)
+            self._state.broker_connected = available
+            if not available:
+                return self._result(STATUS_NOT_READY_NO_MCP)
+            try:
+                adapter.get_account_status()
+                adapter.get_buying_power()
+                adapter.get_positions()
+            except RobinhoodMcpNotConfigured:
+                return self._result(STATUS_NOT_READY_NO_MCP)
+        else:
+            # report_only: Robinhood MCP 불요. 시장데이터만으로 모니터링 시작(실주문 경로 없음).
+            self._state.broker_connected = self._adapter_available(self._get_adapter())
 
         # preflight 통과 → 세션 시작.
         self._state.trading_mode = mode
@@ -174,13 +224,15 @@ class LiveSessionManager:
         self._state.daily_order_count = 0
         self._state.real_orders_placed = 0
         self._write_session_event("start")
+        self._start_scan(provider)
         return self._result(STATUS_OK)
 
     def stop(self, reason: str = "manual") -> LiveActionResult:
-        # 즉시 신규 주문 차단.
+        # 즉시 신규 주문 차단 + 스캔 루프/price polling 중지.
         self._state.automation_running = False
         self._state.stop_reason = reason
         self._state.stopped_at = _now_iso()
+        self._stop_scan()
         self._try_cancel_open_orders()  # 어댑터 있으면 시도(없으면 흡수). 청산은 안 함.
         self._write_session_event("stop")
         self._upsert_daily_record()
@@ -191,10 +243,67 @@ class LiveSessionManager:
         self._state.automation_running = False
         self._state.stop_reason = "emergency_halt"
         self._state.stopped_at = _now_iso()
+        self._stop_scan()
         self._try_cancel_open_orders()
         self._write_session_event("emergency_halt")
         self._upsert_daily_record()
         return self._result(STATUS_OK)
+
+    def shutdown(self) -> None:
+        """프로세스/테스트 teardown용 — 스캔 스레드를 깔끔히 정지(상태 전이 없음)."""
+        self._stop_scan()
+
+    # --- report_only 스캔 루프 라이프사이클 (주문/LLM 없음) ---
+    def _start_scan(self, provider: MarketDataProvider) -> None:
+        settings = self._get_settings()
+        if not settings.live_scan_enabled:
+            return
+        self._scan_loop = LiveScanLoop(
+            provider,
+            reports_dir=self._reports_dir,
+            max_symbols=settings.live_scan_max_symbols_per_cycle,
+        )
+        # 첫 cycle은 동기 실행(결정론 — status/테스트가 즉시 결과를 본다).
+        self._run_one_cycle()
+        # 이후 주기적 재스캔은 daemon 스레드(automation_running 동안). interval마다 1 cycle.
+        self._scan_stop.clear()
+        interval = max(1, int(settings.live_scan_interval_seconds))
+        thread = threading.Thread(
+            target=self._scan_runner, args=(interval,), name="live-scan", daemon=True
+        )
+        self._scan_thread = thread
+        self._state.live_scan_running = True
+        thread.start()
+
+    def _scan_runner(self, interval: int) -> None:
+        # stop flag가 설정될 때까지 interval마다 1 cycle. 첫 cycle은 start()에서 이미 동기 실행됨.
+        while not self._scan_stop.wait(interval):
+            if not self._state.automation_running:
+                break
+            self._run_one_cycle()
+
+    def _run_one_cycle(self) -> None:
+        if self._scan_loop is None:
+            return
+        with self._scan_lock:
+            try:
+                events = self._scan_loop.scan_cycle(
+                    session_id=self._state.session_id,
+                    trading_mode=self._state.trading_mode,
+                )
+            except Exception:  # noqa: BLE001 - 스캔 실패가 세션을 죽이지 않게(graceful)
+                return
+        self._state.last_scan_at = _now_iso()
+        self._state.last_scan_event_count = len(events)
+        self._state.latest_buy_candidates = [e.symbol for e in events if e.buy_candidate]
+
+    def _stop_scan(self) -> None:
+        self._scan_stop.set()
+        thread = self._scan_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=2.0)
+        self._scan_thread = None
+        self._state.live_scan_running = False
 
     # --- 내부 헬퍼 ---
     def _try_cancel_open_orders(self) -> None:

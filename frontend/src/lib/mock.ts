@@ -29,6 +29,12 @@ export const mockLiveStatus: LiveSessionState = {
   real_orders_placed: 0,
   daily_order_count: 0,
   current_exposure: 0,
+  market_data_provider: "mock",
+  market_data_status: "available",
+  live_scan_running: false,
+  last_scan_at: null,
+  last_scan_event_count: 0,
+  latest_buy_candidates: [],
 };
 
 export const mockPortfolio: Portfolio = {

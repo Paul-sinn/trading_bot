@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/Card";
 import { Gauge } from "@/components/ui/Gauge";
 import { LiveControls } from "@/components/dashboard/LiveControls";
 import { LiveTicker } from "@/components/dashboard/LiveTicker";
-import { getLiveStatus, getPortfolio } from "@/lib/api";
+import { getLiveStatus, getPortfolio, getScanEvents } from "@/lib/api";
 import { mockLiveStatus, mockPortfolio, mockTrades } from "@/lib/mock";
 import { formatUsd, pnlColorClass } from "@/lib/utils";
 
@@ -28,6 +28,7 @@ export default async function DashboardPage() {
   // LiveControls의 "거래 시작" 버튼 클릭 전용). 백엔드 없으면 mock(정지) 폴백.
   const portfolio = (await getPortfolio()) ?? mockPortfolio;
   const liveStatus = (await getLiveStatus()) ?? mockLiveStatus;
+  const scanEvents = (await getScanEvents(50)) ?? [];
   const wr = winRate();
   const risk = exposurePct(portfolio.total_equity, portfolio.cash);
 
@@ -73,7 +74,10 @@ export default async function DashboardPage() {
             실주문 경로 없음 · Robinhood MCP 어댑터 경계
           </div>
         </div>
-        <LiveControls initialStatus={liveStatus} />
+        <LiveControls
+          initialStatus={liveStatus}
+          initialScanEvents={scanEvents}
+        />
       </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

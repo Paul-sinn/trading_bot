@@ -21,6 +21,7 @@ from backend.app.services.live_records import (
     LiveDailyRecord,
     LiveWeeklyRecord,
 )
+from backend.app.services.live_scan import ScanEvent
 from backend.app.services.live_session import (
     LiveActionResult,
     LiveSessionState,
@@ -78,3 +79,9 @@ async def live_daily_record(date: str | None = None) -> LiveDailyRecord | None:
 async def live_weekly_record() -> list[LiveWeeklyRecord]:
     """주간 라이브 기록(일간에서 집계 — 읽기 전용, 주문 없음)."""
     return get_session_manager().weekly_records()
+
+
+@router.get("/api/live/scan-events", response_model=list[ScanEvent])
+async def live_scan_events(limit: int = 50) -> list[ScanEvent]:
+    """최근 라이브 스캔 이벤트(읽기 전용 — 스캔 시작 안 함, 주문 없음). limit 1..500 clamp."""
+    return get_session_manager().scan_events(limit)

@@ -281,6 +281,36 @@ export interface LiveSessionState {
   real_orders_placed: number;
   daily_order_count: number;
   current_exposure: number;
+  // 라이브 시장데이터 + report_only 스캔 루프 상태(모니터링 전용 — 주문 없음).
+  market_data_provider: string;
+  market_data_status: string;
+  live_scan_running: boolean;
+  last_scan_at: string | null;
+  last_scan_event_count: number;
+  latest_buy_candidates: string[];
+}
+
+/** backend: services/live_scan.py ScanEvent. report_only 스캔 결과(real_orders_placed=0). */
+export type ScanStatus =
+  | "BUY_CANDIDATE"
+  | "REJECT"
+  | "SKIP"
+  | "INSUFFICIENT_DATA"
+  | "ERROR";
+
+export interface LiveScanEvent {
+  timestamp: string;
+  session_id: string | null;
+  trading_mode: string;
+  provider: string;
+  symbol: string;
+  price: number | null;
+  scan_status: ScanStatus;
+  reason: string;
+  features: Record<string, unknown>;
+  riskgate_status: string | null;
+  buy_candidate: boolean;
+  real_orders_placed: number;
 }
 
 /** backend: services/live_session.py LiveActionResult. start/stop/halt 결과(status로 분기). */

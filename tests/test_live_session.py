@@ -14,10 +14,12 @@ from backend.app.services import live_records
 from backend.app.services.live_session import (
     STATUS_BLOCKED_EMERGENCY_HALT,
     STATUS_BLOCKED_LIVE_DISABLED,
+    STATUS_NOT_READY_BAD_PROVIDER,
     STATUS_NOT_READY_NO_MCP,
     STATUS_OK,
     LiveSessionManager,
 )
+from backend.app.services.market_data import MockMarketDataProvider
 from backend.app.services.robinhood_mcp import (
     PlaceholderRobinhoodMcpAdapter,
     RobinhoodMcpNotConfigured,
@@ -61,10 +63,11 @@ class FakeAvailableAdapter:
         return {"state": "filled"}
 
 
-def _mgr(tmp_path, *, adapter=None, live_enabled=False):
+def _mgr(tmp_path, *, adapter=None, live_enabled=False, market_data=None, provider_name="mock"):
     return LiveSessionManager(
         adapter=adapter if adapter is not None else PlaceholderRobinhoodMcpAdapter(),
-        settings=Settings(live_trading_enabled=live_enabled),
+        market_data=market_data if market_data is not None else MockMarketDataProvider(),
+        settings=Settings(live_trading_enabled=live_enabled, market_data_provider=provider_name),
         reports_dir=tmp_path,
     )
 
@@ -96,12 +99,75 @@ def test_placeholder_adapter_raises_on_broker_calls(method, args):
 
 # --- start preflight ---
 
-def test_start_fails_when_mcp_missing(tmp_path):
-    mgr = _mgr(tmp_path)  # placeholder → check_availability False
-    res = mgr.start("report_only")
+def test_live_auto_start_fails_when_mcp_missing(tmp_path):
+    # live_auto는 여전히 Robinhood MCP 필요 — 없으면 NOT_READY_NO_MCP.
+    mgr = _mgr(tmp_path, live_enabled=True)  # placeholder adapter → check_availability False
+    res = mgr.start("live_auto")
     assert res.status == STATUS_NOT_READY_NO_MCP
     assert res.state.automation_running is False
     assert res.real_orders_placed == 0
+
+
+def test_report_only_start_works_without_mcp(tmp_path):
+    # report_only는 MCP 없이도 모니터링 시작 — 시장데이터(mock)만으로 충분.
+    mgr = _mgr(tmp_path)  # placeholder MCP(미연동) + mock 시장데이터
+    res = mgr.start("report_only")
+    assert res.status == STATUS_OK
+    assert res.state.automation_running is True
+    assert res.state.live_scan_running is True
+    assert res.state.market_data_provider == "mock"
+    assert res.real_orders_placed == 0
+    mgr.shutdown()
+
+
+def test_report_only_start_fails_on_unknown_provider(tmp_path):
+    # 알 수 없는 provider → fail-closed(NOT_READY_BAD_PROVIDER). 주입 없이 settings로만 강제.
+    mgr = LiveSessionManager(
+        adapter=PlaceholderRobinhoodMcpAdapter(),
+        settings=Settings(market_data_provider="bloomberg"),
+        reports_dir=tmp_path,
+    )
+    res = mgr.start("report_only")
+    assert res.status == STATUS_NOT_READY_BAD_PROVIDER
+    assert res.state.automation_running is False
+
+
+def test_report_only_start_runs_scan_cycle(tmp_path):
+    mgr = _mgr(tmp_path)
+    mgr.start("report_only")
+    # 첫 cycle은 동기 실행 → 스캔 이벤트가 즉시 기록됨.
+    from backend.app.services.live_scan import SCAN_LOG
+
+    assert (tmp_path / SCAN_LOG).exists()
+    assert mgr.status().last_scan_event_count > 0
+    mgr.shutdown()
+
+
+def test_stop_stops_scan_loop(tmp_path):
+    mgr = _mgr(tmp_path)
+    mgr.start("report_only")
+    assert mgr.status().live_scan_running is True
+    mgr.stop("manual")
+    assert mgr.status().live_scan_running is False
+    assert mgr.status().automation_running is False
+
+
+def test_emergency_halt_stops_scan_loop(tmp_path):
+    mgr = _mgr(tmp_path)
+    mgr.start("report_only")
+    mgr.emergency_halt()
+    assert mgr.status().live_scan_running is False
+    assert mgr.status().automation_running is False
+
+
+def test_scan_events_never_place_orders(tmp_path):
+    mgr = _mgr(tmp_path)
+    mgr.start("report_only")
+    events = mgr.scan_events(limit=100)
+    assert events  # 스캔이 돌았다
+    assert all(e.real_orders_placed == 0 for e in events)
+    assert all(e.riskgate_status is None for e in events)  # report_only RiskGate 미평가
+    mgr.shutdown()
 
 
 def test_start_blocked_when_live_disabled(tmp_path):
@@ -130,6 +196,7 @@ def test_successful_mocked_start_sets_running(tmp_path):
     assert mgr.can_place_new_order() is True
     # 시작은 주문을 내지 않는다(프로브만).
     assert adapter.order_calls == 0
+    mgr.shutdown()
 
 
 def test_report_only_start_succeeds_with_available_adapter(tmp_path):
@@ -138,6 +205,7 @@ def test_report_only_start_succeeds_with_available_adapter(tmp_path):
     res = mgr.start("report_only")
     assert res.status == STATUS_OK
     assert res.state.automation_running is True
+    mgr.shutdown()
 
 
 # --- stop / emergency-halt: 즉시 신규 주문 차단 ---
