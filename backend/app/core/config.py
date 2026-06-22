@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     allow_options_trading: bool = False  # 옵션 거래 미허용(주식만).
     require_fresh_broker_snapshot_for_real_order: bool = True  # stale 스냅샷이면 차단.
     require_market_hours_for_real_order: bool = True  # 장시간 외 차단.
+    agentic_account_only: bool = True  # agentic_allowed 계정만(스냅샷 계정 미상이면 차단).
 
     claude_api_key: str | None = None
     database_url: str = "sqlite:///./trading_bot.db"

@@ -462,13 +462,18 @@ export interface OrderReceipt {
 export interface ExecutionStatus {
   real_execution_enabled: boolean;
   require_manual_arm: boolean;
+  agentic_account_only: boolean;
   arm_status: string; // missing | disarmed | expired | armed
   arm_expires_at: string | null;
   max_notional_per_real_order_usd: number;
-  real_orders_today: number;
   max_real_orders_per_day: number;
-  latest_block_reason: string | null;
+  real_orders_today: number;
+  // 프로덕션 준비도: environment=production·실 시장시간 영수증만 반영.
   latest_decision: string | null;
+  latest_block_reason: string | null;
+  latest_environment: string | null;
+  // test/proof(mocked 시장시간) 이력은 별도 카운트로만 — 프로덕션 latest와 섞이지 않음.
+  test_proof_count: number;
   real_orders_placed: number;
 }
 

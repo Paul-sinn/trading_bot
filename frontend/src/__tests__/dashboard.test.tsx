@@ -107,12 +107,17 @@ describe("① 대시보드 페이지", () => {
     ).toBeInTheDocument();
   });
 
-  it("실주문 실행 준비 패널(scaffold 비활성 라벨)을 렌더한다", async () => {
+  it("실주문 실행 준비 패널(scaffold 비활성 + 프로덕션 준비도 라벨)을 렌더한다", async () => {
     render(await DashboardPage());
     expect(screen.getByText("실주문 실행 준비")).toBeInTheDocument();
     expect(
       screen.getByText(
         "Real order execution is disabled. Scaffold only — no Robinhood order submitted.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Production readiness only uses real market-hours receipts.",
       ),
     ).toBeInTheDocument();
   });

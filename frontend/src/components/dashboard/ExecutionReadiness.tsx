@@ -35,6 +35,9 @@ export function ExecutionReadinessPanel({
         Real order execution is disabled. Scaffold only — no Robinhood order
         submitted.
       </div>
+      <div className="text-xs text-neutral-500">
+        Production readiness only uses real market-hours receipts.
+      </div>
 
       <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
         <Item
@@ -61,9 +64,14 @@ export function ExecutionReadinessPanel({
           mono
         />
         <Item
-          label="최근 판정"
+          label="프로덕션 최근 판정"
           value={status?.latest_decision ?? "—"}
           tone={status?.latest_decision === "REAL_READY_DRY_RUN" ? "warn" : "muted"}
+        />
+        <Item
+          label="test/proof 이력"
+          value={String(status?.test_proof_count ?? 0)}
+          tone="muted"
         />
         <Item
           label="최근 차단 사유"

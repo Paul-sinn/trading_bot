@@ -145,6 +145,9 @@ def evaluate_readiness(
     if snapshot is None:
         reasons.append("broker snapshot 없음")
     else:
+        # agentic 계정 전용: 워커는 agentic_allowed 계정만 스냅샷한다. 계정 미상(기본 마스크)이면 차단.
+        if settings.agentic_account_only and (not snapshot.account_last4 or snapshot.account_last4 == "••••"):
+            reasons.append("AGENTIC_ACCOUNT_ONLY: 스냅샷 계정 미상")
         if settings.require_fresh_broker_snapshot_for_real_order and is_stale(
             snapshot, max_age_seconds=settings.broker_snapshot_max_age_seconds, now=now
         ):
@@ -191,6 +194,10 @@ class RealExecutionReceipt(BaseModel):
     reason: str = ""
     block_reasons: list[str] = Field(default_factory=list)
     executor: str = "real_robinhood"
+    # 프로덕션 준비도와 테스트/증명 실행을 절대 혼동하지 않기 위한 출처 표식.
+    environment: Literal["production", "test"] = "production"
+    market_hours_source: Literal["real", "mocked"] = "real"
+    is_proof_run: bool = False
     broker_order_id: str | None = None
     real_order_placed: bool = False
     real_orders_placed: int = 0
@@ -236,6 +243,29 @@ def latest_execution_receipt(*, reports_dir: Path | None = None) -> RealExecutio
     return rs[-1] if rs else None
 
 
+def latest_production_receipt(*, reports_dir: Path | None = None) -> RealExecutionReceipt | None:
+    """프로덕션(environment=production, 실 시장시간) 영수증 중 가장 최근 1건.
+
+    프로덕션 준비도 판단은 **오직 이 함수**만 쓴다 — mocked 시장시간 proof(test) 영수증은 절대
+    프로덕션 latest로 노출되지 않는다.
+    """
+    prod = [
+        r
+        for r in load_execution_receipts(limit=500, reports_dir=reports_dir)
+        if r.environment == "production" and not r.is_proof_run
+    ]
+    return prod[-1] if prod else None
+
+
+def test_proof_count(*, reports_dir: Path | None = None) -> int:
+    """test/proof(environment=test) 영수증 수(별도 '테스트/증명 이력' 표시용)."""
+    return sum(
+        1
+        for r in load_execution_receipts(limit=500, reports_dir=reports_dir)
+        if r.environment == "test"
+    )
+
+
 def executed_keys(*, reports_dir: Path | None = None) -> set[str]:
     """이미 '제출된'(MOCK_SUBMITTED) idempotency_key 집합. REAL_BLOCKED/READY는 제외(미제출)."""
     return {
@@ -256,8 +286,15 @@ def build_receipt(
     *,
     executor: OrderExecutor | None,
     source: str = "claude_code_worker",
+    market_hours_source: Literal["real", "mocked"] = "real",
+    is_proof_run: bool = False,
 ) -> RealExecutionReceipt:
-    """readiness + executor로 영수증을 만든다. 실 제출 없음(MOCK만 가짜 id)."""
+    """readiness + executor로 영수증을 만든다. 실 제출 없음(MOCK만 가짜 id).
+
+    출처 표식: mocked 시장시간 또는 mock executor면 test/proof로 기록한다(프로덕션 준비도와 분리).
+    """
+    proof = is_proof_run or market_hours_source == "mocked" or isinstance(executor, MockOrderExecutor)
+    environment: Literal["production", "test"] = "test" if proof else "production"
 
     def _receipt(
         decision: ExecutionDecision,
@@ -276,6 +313,9 @@ def build_receipt(
             limit_price=intent.planned_limit_price,
             notional=intent.planned_notional_usd,
             executor=executor.name if executor else "real_robinhood",
+            environment=environment,
+            market_hours_source=market_hours_source,
+            is_proof_run=proof,
             decision=decision,
             reason=reason,
             block_reasons=block_reasons or [],
@@ -329,7 +369,11 @@ def process_execution(
         now=now,
         market_open=market_open,
     )
-    receipt = build_receipt(intent, readiness, executor=executor)
+    # market_open이 명시 주입되면 mocked(=test/proof), None이면 production heuristic(=real).
+    market_hours_source: Literal["real", "mocked"] = "mocked" if market_open is not None else "real"
+    receipt = build_receipt(
+        intent, readiness, executor=executor, market_hours_source=market_hours_source
+    )
     return append_execution_receipt(receipt, reports_dir=reports_dir)
 
 
@@ -337,30 +381,42 @@ def process_execution(
 class ExecutionStatus(BaseModel):
     real_execution_enabled: bool
     require_manual_arm: bool
+    agentic_account_only: bool = True
     arm_status: str
     arm_expires_at: str | None = None
     max_notional_per_real_order_usd: float
-    real_orders_today: int = 0
     max_real_orders_per_day: int
+    real_orders_today: int = 0
+    # 프로덕션 준비도: 오직 environment=production·실 시장시간 영수증만 반영한다.
+    latest_decision: str | None = None  # 프로덕션 최신 결정(없으면 null)
     latest_block_reason: str | None = None
-    latest_decision: str | None = None
+    latest_environment: str | None = None  # 항상 production(또는 None)
+    # test/proof(mocked 시장시간) 이력은 별도 카운트로만 노출 — 프로덕션 latest로 섞이지 않는다.
+    test_proof_count: int = 0
     real_orders_placed: int = 0
 
 
 def execution_status(*, settings: Settings | None = None, reports_dir: Path | None = None) -> ExecutionStatus:
-    """실행 준비 상태 요약(읽기 전용 — MCP/주문 없음)."""
+    """실행 준비 상태 요약(읽기 전용 — MCP/주문 없음).
+
+    `latest_decision`/`latest_block_reason`은 **프로덕션 영수증만** 반영한다. mocked 시장시간 proof
+    (environment=test)는 프로덕션 latest로 절대 노출되지 않고 `test_proof_count`로만 집계된다.
+    """
     settings = settings or Settings()
     arm = read_arm(reports_dir=reports_dir)
-    latest = latest_execution_receipt(reports_dir=reports_dir)
+    prod = latest_production_receipt(reports_dir=reports_dir)
     return ExecutionStatus(
         real_execution_enabled=settings.enable_real_order_execution,
         require_manual_arm=settings.require_manual_arm,
+        agentic_account_only=settings.agentic_account_only,
         arm_status=arm_state(arm),
         arm_expires_at=arm.expires_at if arm else None,
         max_notional_per_real_order_usd=settings.max_notional_per_real_order_usd,
-        real_orders_today=daily_real_order_count(reports_dir=reports_dir),
         max_real_orders_per_day=settings.max_real_orders_per_day,
-        latest_block_reason=(latest.reason if latest and latest.decision == "REAL_BLOCKED" else None),
-        latest_decision=latest.decision if latest else None,
+        real_orders_today=daily_real_order_count(reports_dir=reports_dir),
+        latest_decision=prod.decision if prod else None,
+        latest_block_reason=(prod.reason if prod and prod.decision == "REAL_BLOCKED" else None),
+        latest_environment=prod.environment if prod else None,
+        test_proof_count=test_proof_count(reports_dir=reports_dir),
         real_orders_placed=0,
     )

@@ -53,8 +53,11 @@ def _good_arm() -> RealOrderArm:
     )
 
 
-def _fresh_snap(bp=1000.0, open_orders=None) -> BrokerSnapshot:
-    return BrokerSnapshot(timestamp=NOW.isoformat(), buying_power=bp, open_orders=open_orders or [])
+def _fresh_snap(bp=1000.0, open_orders=None, account_last4="••••9372") -> BrokerSnapshot:
+    return BrokerSnapshot(
+        timestamp=NOW.isoformat(), buying_power=bp, open_orders=open_orders or [],
+        account_last4=account_last4,
+    )
 
 
 def _ready(intent, settings, arm, snapshot, **kw):
@@ -220,3 +223,80 @@ def test_api_execution_status_default_disabled(reports):
     assert body["max_notional_per_real_order_usd"] == 25.0
     assert body["real_orders_today"] == 0
     assert body["real_orders_placed"] == 0
+
+
+# --- v1 하드 리밋 기본값(모두 안전) ---
+def test_v1_hard_limits_default_safe():
+    s = Settings()
+    assert s.enable_real_order_execution is False
+    assert s.require_manual_arm is True
+    assert s.max_notional_per_real_order_usd == 25.0
+    assert s.max_real_orders_per_day == 1
+    assert s.allow_real_sell_orders is False
+    assert s.allow_options_trading is False
+    assert s.require_market_hours_for_real_order is True
+    assert s.require_fresh_broker_snapshot_for_real_order is True
+    assert s.agentic_account_only is True
+
+
+def test_agentic_account_only_blocks_unknown_account():
+    snap = _fresh_snap(account_last4="••••")  # 계정 미상
+    r = _ready(_intent(), _enabled(), _good_arm(), snap)
+    assert not r.ready and any("AGENTIC_ACCOUNT_ONLY" in x for x in r.block_reasons)
+
+
+# --- 출처 표식: production vs test/proof ---
+def test_proof_receipt_marked_test(tmp_path):
+    from backend.app.services.broker_snapshot import append_snapshot as _append
+    _append(_fresh_snap().model_copy(update={"account_last4": "••••9372"}), reports_dir=tmp_path)
+    write_arm(_good_arm(), reports_dir=tmp_path)
+    r = process_execution(_intent(), settings=_enabled(), reports_dir=tmp_path, now=NOW, market_open=True)
+    assert r.environment == "test" and r.market_hours_source == "mocked" and r.is_proof_run is True
+
+
+def test_production_receipt_marked_production(tmp_path):
+    from backend.app.services.broker_snapshot import append_snapshot as _append
+    _append(_fresh_snap().model_copy(update={"account_last4": "••••9372"}), reports_dir=tmp_path)
+    write_arm(_good_arm(), reports_dir=tmp_path)
+    # market_open=None → 실 heuristic. NOW(15:00 평일)=장중 → REAL_READY_DRY_RUN, production.
+    r = process_execution(_intent(), settings=_enabled(), reports_dir=tmp_path, now=NOW)
+    assert r.environment == "production" and r.market_hours_source == "real" and r.is_proof_run is False
+
+
+def test_mocked_proof_never_appears_as_production_latest(reports):
+    from backend.app.services.broker_snapshot import append_snapshot as _append
+    _append(_fresh_snap().model_copy(update={"account_last4": "••••9372"}), reports_dir=reports)
+    write_arm(_good_arm(), reports_dir=reports)
+    # 오직 mocked proof만 기록.
+    process_execution(_intent(key="proof1"), settings=_enabled(), reports_dir=reports, now=NOW, market_open=True)
+
+    client = TestClient(app)
+    body = client.get("/api/live/execution-status").json()
+    assert body["latest_decision"] is None  # 프로덕션 영수증 없음 → latest 없음
+    assert body["latest_environment"] is None
+    assert body["test_proof_count"] == 1  # test 이력으로만 집계
+
+
+def test_production_latest_ignores_test_receipts(reports):
+    from backend.app.services.broker_snapshot import append_snapshot as _append
+    _append(_fresh_snap().model_copy(update={"account_last4": "••••9372"}), reports_dir=reports)
+    write_arm(_good_arm(), reports_dir=reports)
+    process_execution(_intent(key="proof2"), settings=_enabled(), reports_dir=reports, now=NOW, market_open=True)   # test
+    process_execution(_intent(key="prod2"), settings=_enabled(), reports_dir=reports, now=NOW)                     # production
+
+    client = TestClient(app)
+    body = client.get("/api/live/execution-status").json()
+    assert body["latest_environment"] == "production"
+    assert body["latest_decision"] == "REAL_READY_DRY_RUN"
+    assert body["test_proof_count"] == 1  # test는 latest에 안 섞임
+
+
+def test_no_robinhood_write_tool_imported():
+    # 실 executor 모듈은 어떤 Robinhood MCP 도구도 호출/import하지 않는다(write/order 경로 미도달).
+    import inspect
+    import backend.app.services.real_order_executor as mod
+    text = inspect.getsource(mod)
+    assert "mcp__robinhood" not in text  # MCP 도구 네임스페이스가 코드에 전혀 없음
+    # 실 executor는 호출 시 항상 RealExecutionDisabled(실 제출 미도달).
+    with pytest.raises(RealExecutionDisabled):
+        RealRobinhoodOrderExecutor().submit_limit_buy(symbol="AAPL", quantity=1, limit_price=10)
