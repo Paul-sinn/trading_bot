@@ -458,6 +458,20 @@ export interface OrderReceipt {
   errors: string[];
 }
 
+/** backend: services/real_order_executor.py ExecutionStatus. 실주문 scaffold — 기본 비활성, real_orders_placed=0. */
+export interface ExecutionStatus {
+  real_execution_enabled: boolean;
+  require_manual_arm: boolean;
+  arm_status: string; // missing | disarmed | expired | armed
+  arm_expires_at: string | null;
+  max_notional_per_real_order_usd: number;
+  real_orders_today: number;
+  max_real_orders_per_day: number;
+  latest_block_reason: string | null;
+  latest_decision: string | null;
+  real_orders_placed: number;
+}
+
 /** backend: services/live_records.py LiveWeeklyRecord. */
 export interface LiveWeeklyRecord {
   week_start: string;

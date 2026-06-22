@@ -46,6 +46,18 @@ class Settings(BaseSettings):
     broker_snapshot_max_age_seconds: int = 3600  # 이보다 오래되면 stale로 간주.
     reject_on_stale_snapshot: bool = False  # 기본: stale면 경고만(report_only). True면 reject.
 
+    # 실주문 실행(v1 scaffold) — **모두 안전 기본값(비활성)**. 이 값들이 모두 충족돼도 현재 단계에는
+    # 실 MCP 주문 경로가 결선돼 있지 않다(RealExecutionDisabled). 검증·greenlight 전 라이브 금지(헌장 §3/§10).
+    enable_real_order_execution: bool = False  # 마스터 스위치(기본 OFF → 실행 차단).
+    require_manual_arm: bool = True  # 실주문 전 수동 arm 파일 필수.
+    real_order_arm_ttl_seconds: int = 120  # arm 유효시간(만료 시 차단).
+    max_notional_per_real_order_usd: float = 25.0  # 실주문 1건 최대 노셔널(소액 상한).
+    max_real_orders_per_day: int = 1  # 하루 실주문 최대 건수.
+    allow_real_sell_orders: bool = False  # 매도 자동화 미허용(매수 limit만).
+    allow_options_trading: bool = False  # 옵션 거래 미허용(주식만).
+    require_fresh_broker_snapshot_for_real_order: bool = True  # stale 스냅샷이면 차단.
+    require_market_hours_for_real_order: bool = True  # 장시간 외 차단.
+
     claude_api_key: str | None = None
     database_url: str = "sqlite:///./trading_bot.db"
     redis_url: str = "redis://localhost:6379/0"

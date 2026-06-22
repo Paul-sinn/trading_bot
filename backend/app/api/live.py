@@ -35,6 +35,7 @@ from backend.app.services.order_receipt import (
     latest_receipt,
     load_receipts,
 )
+from backend.app.services.real_order_executor import ExecutionStatus, execution_status
 
 router = APIRouter()
 
@@ -122,3 +123,9 @@ async def live_order_receipts(limit: int = 50) -> list[OrderReceipt]:
 async def live_order_receipt_latest() -> OrderReceipt | None:
     """가장 최근 dry-run 주문 영수증(읽기 전용 — MCP 미호출). 없으면 null."""
     return latest_receipt()
+
+
+@router.get("/api/live/execution-status", response_model=ExecutionStatus)
+async def live_execution_status() -> ExecutionStatus:
+    """실주문 실행 준비 상태(읽기 전용 — scaffold). 기본 비활성, 실주문 경로 없음."""
+    return execution_status()

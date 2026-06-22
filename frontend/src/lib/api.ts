@@ -3,6 +3,7 @@
 import type {
   AiStatus,
   BrokerSnapshot,
+  ExecutionStatus,
   GoalPlan,
   GoalPlanRecord,
   GoalPlanRequest,
@@ -186,6 +187,11 @@ export function getOrderIntents(limit = 50): Promise<OrderIntent[] | null> {
 /** 워커가 쓴 dry-run 주문 영수증 목록(읽기 전용 — MCP 미호출, 주문 없음). 실패 시 null. */
 export function getOrderReceipts(limit = 50): Promise<OrderReceipt[] | null> {
   return apiFetch<OrderReceipt[]>(`/api/live/order-receipts?limit=${limit}`);
+}
+
+/** 실주문 실행 준비 상태(읽기 전용 — scaffold, 기본 비활성, 주문 없음). 실패 시 null. */
+export function getExecutionStatus(): Promise<ExecutionStatus | null> {
+  return apiFetch<ExecutionStatus>("/api/live/execution-status");
 }
 
 /** AI 예산/쿨다운 상태(읽기 전용 — LLM 호출 없음, cost 0.00). 실패 시 null. */

@@ -7,9 +7,11 @@ import { BrokerSnapshotPanel } from "@/components/dashboard/BrokerSnapshot";
 import { LiveControls } from "@/components/dashboard/LiveControls";
 import { LiveTicker } from "@/components/dashboard/LiveTicker";
 import { OrderReceiptsPanel } from "@/components/dashboard/OrderReceipts";
+import { ExecutionReadinessPanel } from "@/components/dashboard/ExecutionReadiness";
 import {
   getBrokerSnapshot,
   getCandidates,
+  getExecutionStatus,
   getLiveStatus,
   getOrderIntents,
   getOrderReceipts,
@@ -43,6 +45,7 @@ export default async function DashboardPage() {
   const orderIntents = (await getOrderIntents(50)) ?? [];
   const brokerSnapshot = await getBrokerSnapshot(); // null이면 패널이 "없음" 경고 표시
   const orderReceipts = (await getOrderReceipts(50)) ?? [];
+  const executionStatus = await getExecutionStatus(); // null이면 패널이 비활성으로 표시
   const wr = winRate();
   const risk = exposurePct(portfolio.total_equity, portfolio.cash);
 
@@ -101,6 +104,9 @@ export default async function DashboardPage() {
 
       {/* 워커 주문 영수증(dry-run only) — 실주문 없음, broker_order_id null */}
       <OrderReceiptsPanel receipts={orderReceipts} />
+
+      {/* 실주문 실행 준비(scaffold) — 기본 비활성, 실주문 경로 없음 */}
+      <ExecutionReadinessPanel status={executionStatus} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* 실시간 리스크% 게이지 */}
