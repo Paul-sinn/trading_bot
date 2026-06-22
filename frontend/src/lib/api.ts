@@ -13,6 +13,7 @@ import type {
   LiveSessionState,
   LiveWeeklyRecord,
   OrderIntent,
+  OrderReceipt,
   MarketDirection,
   Portfolio,
   ShadowReportView,
@@ -180,6 +181,11 @@ export function getCandidates(limit = 50): Promise<LiveCandidate[] | null> {
 /** 최근 dry-run OrderIntent(읽기 전용 — 주문 아님). 실패 시 null. */
 export function getOrderIntents(limit = 50): Promise<OrderIntent[] | null> {
   return apiFetch<OrderIntent[]>(`/api/live/order-intents?limit=${limit}`);
+}
+
+/** 워커가 쓴 dry-run 주문 영수증 목록(읽기 전용 — MCP 미호출, 주문 없음). 실패 시 null. */
+export function getOrderReceipts(limit = 50): Promise<OrderReceipt[] | null> {
+  return apiFetch<OrderReceipt[]>(`/api/live/order-receipts?limit=${limit}`);
 }
 
 /** AI 예산/쿨다운 상태(읽기 전용 — LLM 호출 없음, cost 0.00). 실패 시 null. */

@@ -30,6 +30,11 @@ from backend.app.services.live_session import (
     TradingMode,
     get_session_manager,
 )
+from backend.app.services.order_receipt import (
+    OrderReceipt,
+    latest_receipt,
+    load_receipts,
+)
 
 router = APIRouter()
 
@@ -105,3 +110,15 @@ async def live_order_intents(limit: int = 50) -> list[OrderIntent]:
 async def ai_status() -> AiStatus:
     """AI 예산/쿨다운 셸 상태(읽기 전용 — LLM 호출 없음, ai_cost_estimate_today=0.00)."""
     return get_session_manager().ai_status()
+
+
+@router.get("/api/live/order-receipts", response_model=list[OrderReceipt])
+async def live_order_receipts(limit: int = 50) -> list[OrderReceipt]:
+    """워커가 쓴 dry-run 주문 영수증 목록(읽기 전용 — MCP 미호출, 주문 없음). limit 1..500 clamp."""
+    return load_receipts(limit=limit)
+
+
+@router.get("/api/live/order-receipts/latest", response_model=OrderReceipt | None)
+async def live_order_receipt_latest() -> OrderReceipt | None:
+    """가장 최근 dry-run 주문 영수증(읽기 전용 — MCP 미호출). 없으면 null."""
+    return latest_receipt()

@@ -435,6 +435,29 @@ export interface BrokerSnapshot {
   real_orders_placed: number;
 }
 
+/** backend: services/order_receipt.py OrderReceipt. dry-run 영수증 — broker_order_id null, real_order_placed false. */
+export interface OrderReceipt {
+  receipt_id: string;
+  timestamp: string;
+  source: string;
+  mode: string;
+  intent_id: string;
+  idempotency_key: string;
+  symbol: string;
+  side: string;
+  quantity: number | null;
+  limit_price: number | null;
+  notional: number | null;
+  decision: "WOULD_SUBMIT" | "BLOCKED" | "SKIPPED" | "ERROR";
+  reason: string;
+  broker_order_id: null;
+  real_order_placed: boolean;
+  real_orders_placed: number;
+  control_flags_checked: boolean;
+  broker_snapshot_checked: boolean;
+  errors: string[];
+}
+
 /** backend: services/live_records.py LiveWeeklyRecord. */
 export interface LiveWeeklyRecord {
   week_start: string;

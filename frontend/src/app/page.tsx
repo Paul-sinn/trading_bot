@@ -6,11 +6,13 @@ import { Gauge } from "@/components/ui/Gauge";
 import { BrokerSnapshotPanel } from "@/components/dashboard/BrokerSnapshot";
 import { LiveControls } from "@/components/dashboard/LiveControls";
 import { LiveTicker } from "@/components/dashboard/LiveTicker";
+import { OrderReceiptsPanel } from "@/components/dashboard/OrderReceipts";
 import {
   getBrokerSnapshot,
   getCandidates,
   getLiveStatus,
   getOrderIntents,
+  getOrderReceipts,
   getPortfolio,
   getScanEvents,
 } from "@/lib/api";
@@ -40,6 +42,7 @@ export default async function DashboardPage() {
   const candidates = (await getCandidates(50)) ?? [];
   const orderIntents = (await getOrderIntents(50)) ?? [];
   const brokerSnapshot = await getBrokerSnapshot(); // null이면 패널이 "없음" 경고 표시
+  const orderReceipts = (await getOrderReceipts(50)) ?? [];
   const wr = winRate();
   const risk = exposurePct(portfolio.total_equity, portfolio.cash);
 
@@ -95,6 +98,9 @@ export default async function DashboardPage() {
 
       {/* 브로커 스냅샷(read-only 워커 브리지) — 잔고/포지션/미체결, 주문 경로 없음 */}
       <BrokerSnapshotPanel snapshot={brokerSnapshot} />
+
+      {/* 워커 주문 영수증(dry-run only) — 실주문 없음, broker_order_id null */}
+      <OrderReceiptsPanel receipts={orderReceipts} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* 실시간 리스크% 게이지 */}
