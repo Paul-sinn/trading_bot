@@ -41,6 +41,29 @@ CRITICAL: 실브로커/Robinhood/MCP/라이브 주문 없음. real_orders_placed
 - `POST /api/shadow/run {date?}`: 고정 커맨드 + 엄격 검증된 `--date YYYY-MM-DD`만 전달. 러너는 ID 멱등
   append(중복 원장 행 없음). 베이스라인/유니버스 미변경. 잘못된 날짜 형식은 거부.
 
+## 리뷰 화면 폴리시 (기능/전략 변경 아님 — 가독성·결과 연결·오해 방지)
+- 결과 연결(OutcomeDetailView): 각 BUY/결정에 forward 결과를 (date,symbol)로 머지 — returns 1/5/10/20/60d,
+  MFE/MAE, stop_hit/trail_hit/time_close, mature(60d 성숙), scorable. 미성숙 horizon은 "pending", 없으면 "n/a".
+- historical vs live-forward: record_mode. 결정일이 원장 frontier(최신일)보다 과거면 `historical`,
+  최신일이면 `live-forward`. historical은 실거래처럼 보이면 안 됨 — "Historical simulation record — not a live
+  trade." 표기. 모든 레코드는 report-only(real_orders_placed=0).
+- 포지션 상태: held/flat은 '시뮬/report-only 포지션 상태'로 라벨. 실보유 암시 금지.
+- 계획 수량: 0/null/미상이면 "not sized / report-only"로 표시(0.0000을 실행 가능 수량처럼 보이지 않게).
+- 리뷰 필터(decisions_detail, 선택 날짜): BUY/REJECT/SKIP only, 재진입 only, best/worst 60d, pending. 빈 데이터
+  안전.
+- missed-winner(missed_winners, historical 분석): REJECT/SKIP인데 이후 60d 강한 수익. 데이터 없으면 비표시.
+  전략 변경 아님 — 과거 분석 라벨.
+- 집중 경고: 상단에도 노출 + top 심볼 기여(가능 시). 하단 raw md와 별개.
+- raw md: collapsible(접기/펴기). 기본 접힘으로 페이지 지배 방지.
+- 빈 상태: BUY 0 → "No BUY signals today. Strategy is waiting." / 성숙 결과 없음 → "Outcomes pending." /
+  파일 없음·malformed → 크래시 없음.
+
+## 추가 view 필드
+- buys[].outcome: OutcomeDetailView|None, buys[].record_mode.
+- decisions_detail: list[DecisionDetailView] (선택 날짜 전체 결정 + 결과, 필터용).
+- missed_winners: list[MissedWinnerView] (symbol,date,decision,return_60d — 전 기간 historical 분석).
+- has_mature_outcomes: bool, latest_ledger_date: str|None.
+
 ## frontend (frontend/src)
 - nav에 "섀도 리포트"(`/shadow`) 추가. page `app/shadow/page.tsx`: `/api/shadow` fetch → 헬스 배지,
   카운트, BUY 사전검토 상세, pending/matured, 최근 결과, 재진입, 집중 경고, real_orders=0, raw md.

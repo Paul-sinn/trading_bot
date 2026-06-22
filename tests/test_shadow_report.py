@@ -34,6 +34,16 @@ def _outcome(date, symbol, decision, ret60, *, reentry=True, scorable=True,
     }, ensure_ascii=False)
 
 
+def _outcome_full(date, symbol, decision, *, returns, mfe=None, mae=None, stop_hit=None,
+                  trail_hit=None, time_close=None, scorable=True, reentry=False):
+    return json.dumps({
+        "date": date, "symbol": symbol, "decision": decision, "real_orders_placed": 0,
+        "outcome": {"scorable": scorable, "returns": returns, "mfe": mfe, "mae": mae,
+                    "stop_hit": stop_hit, "trail_hit": trail_hit, "time_close": time_close},
+        "reentry": {"available": True, "is_reentry": reentry},
+    }, ensure_ascii=False)
+
+
 # --- 빈 상태 ---
 
 
@@ -240,3 +250,121 @@ def test_date_filter_selects_previous_day(tmp_path):
     assert past.report_date == "2026-06-10"
     assert past.selected_date == "2026-06-10"
     assert past.n_buy == 1 and past.buys[0].symbol == "NVDA"
+
+
+# --- 리뷰 폴리시: 결과 연결(outcome linkage) ---
+
+
+def test_buy_outcome_fields_merged(tmp_path):
+    _write(tmp_path / "signal_decision_log.jsonl",
+           _decision("2025-08-01", "AMZN", "BUY", position_shares=1.0))
+    _write(tmp_path / "decision_outcome_score.jsonl", _outcome_full(
+        "2025-08-01", "AMZN", "BUY",
+        returns={"1": -0.014, "5": 0.037, "10": 0.076, "20": 0.066, "60": 0.057},
+        mfe=0.112, mae=-0.017, stop_hit=False, trail_hit=False, time_close=True,
+    ))
+    b = load_shadow_report(reports_dir=tmp_path, date="2025-08-01").buys[0]
+    assert b.outcome is not None
+    assert b.outcome.return_1d == -0.014 and b.outcome.return_60d == 0.057
+    assert b.outcome.mfe == 0.112 and b.outcome.mae == -0.017
+    assert b.outcome.stop_hit is False and b.outcome.trail_hit is False
+    assert b.outcome.time_close is True
+    assert b.outcome.mature is True            # 60d 성숙
+
+
+def test_buy_outcome_pending_when_not_mature(tmp_path):
+    _write(tmp_path / "signal_decision_log.jsonl", _decision("2026-06-18", "NVDA", "BUY"))
+    _write(tmp_path / "decision_outcome_score.jsonl", _outcome_full(
+        "2026-06-18", "NVDA", "BUY",
+        returns={"1": 0.01, "5": None, "10": None, "20": None, "60": None}))
+    b = load_shadow_report(reports_dir=tmp_path).buys[0]
+    assert b.outcome is not None
+    assert b.outcome.return_1d == 0.01
+    assert b.outcome.return_60d is None        # 미성숙 → pending(UI)
+    assert b.outcome.mature is False
+
+
+def test_buy_outcome_absent_is_none(tmp_path):
+    _write(tmp_path / "signal_decision_log.jsonl", _decision("2026-06-18", "NVDA", "BUY"))
+    b = load_shadow_report(reports_dir=tmp_path).buys[0]
+    assert b.outcome is None                    # 결과 원장 없음 → n/a(UI)
+
+
+# --- 리뷰 폴리시: historical vs live-forward 모드 ---
+
+
+def test_record_mode_historical_vs_live_forward(tmp_path):
+    _write(tmp_path / "signal_decision_log.jsonl", "\n".join([
+        _decision("2025-08-01", "AMZN", "BUY"),     # frontier보다 과거 → historical
+        _decision("2026-06-18", "NVDA", "BUY"),     # 최신(frontier) → live-forward
+    ]))
+    view_latest = load_shadow_report(reports_dir=tmp_path)
+    assert view_latest.latest_ledger_date == "2026-06-18"
+    assert view_latest.buys[0].symbol == "NVDA"
+    assert view_latest.buys[0].record_mode == "live-forward"
+
+    view_past = load_shadow_report(reports_dir=tmp_path, date="2025-08-01")
+    assert view_past.buys[0].record_mode == "historical"
+
+
+# --- 리뷰 폴리시: decisions_detail(필터용) ---
+
+
+def test_decisions_detail_all_decisions_with_outcome(tmp_path):
+    _write(tmp_path / "signal_decision_log.jsonl", "\n".join([
+        _decision("2025-08-01", "AMZN", "BUY"),
+        _decision("2025-08-01", "MU", "REJECT", riskgate_passed=False),
+        _decision("2025-08-01", "AAPL", "SKIP"),
+    ]))
+    _write(tmp_path / "decision_outcome_score.jsonl", _outcome_full(
+        "2025-08-01", "AMZN", "BUY",
+        returns={"1": 0.01, "5": 0.02, "10": 0.03, "20": 0.04, "60": 0.25}))
+    view = load_shadow_report(reports_dir=tmp_path, date="2025-08-01")
+    rows = {r.symbol: r for r in view.decisions_detail}
+    assert set(rows) == {"AMZN", "MU", "AAPL"}
+    assert rows["AMZN"].decision == "BUY" and rows["AMZN"].outcome.return_60d == 0.25
+    assert rows["MU"].decision == "REJECT" and rows["MU"].riskgate_result == "VETO"
+    assert rows["AAPL"].outcome is None         # SKIP 결과 없음 → None(안전)
+
+
+def test_has_mature_outcomes_flag(tmp_path):
+    _write(tmp_path / "signal_decision_log.jsonl", _decision("2026-06-18", "NVDA", "BUY"))
+    _write(tmp_path / "decision_outcome_score.jsonl", _outcome_full(
+        "2026-06-18", "NVDA", "BUY",
+        returns={"1": 0.01, "5": None, "10": None, "20": None, "60": None}))
+    assert load_shadow_report(reports_dir=tmp_path).has_mature_outcomes is False
+    _write(tmp_path / "decision_outcome_score.jsonl", _outcome_full(
+        "2026-06-18", "NVDA", "BUY",
+        returns={"1": 0.01, "5": 0.02, "10": 0.03, "20": 0.04, "60": 0.1}))
+    assert load_shadow_report(reports_dir=tmp_path).has_mature_outcomes is True
+
+
+# --- 리뷰 폴리시: missed-winner(historical 분석) ---
+
+
+def test_missed_winners_reject_skip_strong_60d(tmp_path):
+    _write(tmp_path / "signal_decision_log.jsonl", "\n".join([
+        _decision("2025-08-01", "AMZN", "BUY"),
+        _decision("2025-08-01", "MU", "REJECT"),
+        _decision("2025-08-01", "ARM", "SKIP"),
+    ]))
+    _write(tmp_path / "decision_outcome_score.jsonl", "\n".join([
+        _outcome_full("2025-08-01", "AMZN", "BUY",
+                      returns={"1": 0, "5": 0, "10": 0, "20": 0, "60": 0.30}),   # BUY 제외
+        _outcome_full("2025-08-01", "MU", "REJECT",
+                      returns={"1": 0, "5": 0, "10": 0, "20": 0, "60": 0.45}),   # missed winner
+        _outcome_full("2025-08-01", "ARM", "SKIP",
+                      returns={"1": 0, "5": 0, "10": 0, "20": 0, "60": 0.05}),   # 약함 → 제외
+    ]))
+    view = load_shadow_report(reports_dir=tmp_path)
+    syms = [m.symbol for m in view.missed_winners]
+    assert "MU" in syms                         # REJECT인데 60d 강세
+    assert "AMZN" not in syms                    # BUY는 missed-winner 아님
+    assert "ARM" not in syms                     # 약한 수익 제외
+    assert all(m.decision in ("REJECT", "SKIP") for m in view.missed_winners)
+
+
+def test_missed_winners_empty_safe(tmp_path):
+    _write(tmp_path / "signal_decision_log.jsonl", _decision("2026-06-18", "NVDA", "BUY"))
+    view = load_shadow_report(reports_dir=tmp_path)
+    assert view.missed_winners == []            # 데이터 없음 → 빈 리스트(크래시 없음)
