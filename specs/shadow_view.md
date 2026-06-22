@@ -19,12 +19,35 @@ CRITICAL: 실브로커/Robinhood/MCP/라이브 주문 없음. real_orders_placed
 ## view model (ShadowReportView)
 - available, empty_message, run_command, health_status(PASS/WARN/FAIL/UNKNOWN), health_findings.
 - report_date, reference_date, n_buy/n_reject/n_skip, riskgate_vetoes, real_orders_placed(=0).
-- buys(planned entry/exit), pending_counts/matured_counts(per horizon), recent_outcomes(60d),
+- buys(detailed pre-trade review — 아래), pending_counts/matured_counts(per horizon), recent_outcomes(60d),
   reentry_total/count, concentration_warnings, daily_markdown(raw).
+- available_dates: 결정 로그에 존재하는 거래일(내림차순) — 과거 BUY 예시 리뷰용 날짜 선택지.
+- selected_date: 현재 보고 있는 날짜(요청 date 또는 최신).
+
+## BUY 사전검토 / 주문 계획 상세 (BuyView — report-only)
+각 BUY 후보마다 "라이브였다면 이렇게 주문했을 것"을 서술만 한다(실행 없음). 필드:
+- symbol, decision_date, reason(요약).
+- shadow_score, momentum_score, volume_ratio_20d (있으면; 없으면 null 안전).
+- price_above_20ma, ma20_above_ma50 (추세 플래그; 있으면), relative_strength, distance_from_high.
+- riskgate_passed + riskgate_reasons + riskgate_result(PASS|VETO|N/A).
+- position_shares + position_state(held|flat).
+- is_reentry, previous_exit_reason, days_since_last_exit (결과 원장 reentry 컨텍스트에서 (date,symbol) 매칭; 없으면 null).
+- planned_entry_type=next-bar-limit, entry_limit_buffer_pct=0.03, planned_stop_loss=0.15,
+  planned_trailing_stop=0.20, planned_max_holding=60 (잠긴 베이스라인을 '서술'만 — 변경 아님).
+- real_orders_placed=0 (항상).
+
+## 날짜 선택 / 과거 BUY 예시 리뷰 (report-only)
+- `GET /api/shadow?date=YYYY-MM-DD`: 결정 로그를 해당 날짜로 필터해 읽기만 한다(원장 미변경, 실행 없음).
+- `POST /api/shadow/run {date?}`: 고정 커맨드 + 엄격 검증된 `--date YYYY-MM-DD`만 전달. 러너는 ID 멱등
+  append(중복 원장 행 없음). 베이스라인/유니버스 미변경. 잘못된 날짜 형식은 거부.
 
 ## frontend (frontend/src)
 - nav에 "섀도 리포트"(`/shadow`) 추가. page `app/shadow/page.tsx`: `/api/shadow` fetch → 헬스 배지,
-  카운트, BUY 표, pending/matured, 최근 결과, 재진입, 집중 경고, real_orders=0, raw md.
+  카운트, BUY 사전검토 상세, pending/matured, 최근 결과, 재진입, 집중 경고, real_orders=0, raw md.
+- BUY ≥ 1: 각 BUY마다 사전검토 카드(시그널 지표 + RiskGate + 재진입 + 주문 계획 상세).
+  "report-only 주문 계획" 섹션: 주문 버튼/브로커/Robinhood 동작 없음 + "This is a simulated plan only" 명시.
+- BUY 0: "No BUY signals today. Strategy is waiting." + 아래에 SKIP/REJECT 요약.
+- 날짜 선택 드롭다운(available_dates) → `?date=` 로 과거 BUY 예시 읽기. "이 날짜로 재생성" → `run {date}`.
 - 파일 없으면 친절한 빈 상태 + 실행 안내(`python -m experiments.daily_shadow_report`). 크래시 금지.
 - "일간 섀도 리포트 재생성" 버튼 → `POST /api/shadow/run`(report-only).
 
