@@ -2,8 +2,10 @@
 // backend(SSOT)만 호출한다 (CLAUDE.md CRITICAL / ADR-001).
 import type {
   AiStatus,
+  BrokerPosition,
   BrokerSnapshot,
   ExecutionStatus,
+  ExitDecision,
   GoalPlan,
   GoalPlanRecord,
   GoalPlanRequest,
@@ -192,6 +194,19 @@ export function getOrderReceipts(limit = 50): Promise<OrderReceipt[] | null> {
 /** 실주문 실행 준비 상태(읽기 전용 — scaffold, 기본 비활성, 주문 없음). 실패 시 null. */
 export function getExecutionStatus(): Promise<ExecutionStatus | null> {
   return apiFetch<ExecutionStatus>("/api/live/execution-status");
+}
+
+// --- 포지션 / 청산 매니저(read-only, dry-run) ---
+// CRITICAL: backend는 MCP 미호출(워커 스냅샷만 읽음). 청산은 dry-run — 매도 주문 없음.
+
+/** broker 스냅샷 기반 포지션(읽기 전용 — 주문 없음). 실패 시 null. */
+export function getPositions(): Promise<BrokerPosition[] | null> {
+  return apiFetch<BrokerPosition[]>("/api/positions");
+}
+
+/** 최근 dry-run 청산 판단 목록(읽기 전용 — 매도 없음). 실패 시 null. */
+export function getExits(limit = 50): Promise<ExitDecision[] | null> {
+  return apiFetch<ExitDecision[]>(`/api/exits?limit=${limit}`);
 }
 
 /** AI 예산/쿨다운 상태(읽기 전용 — LLM 호출 없음, cost 0.00). 실패 시 null. */

@@ -472,6 +472,45 @@ export interface ExecutionStatus {
   real_orders_placed: number;
 }
 
+/** backend: services/position_manager.py Position. broker 스냅샷 기반(읽기 전용). */
+export interface BrokerPosition {
+  symbol: string;
+  quantity: number;
+  average_buy_price: number | null;
+  current_quote: number | null;
+  market_value: number | null;
+  unrealized_pnl: number | null;
+  unrealized_pnl_pct: number | null;
+  peak_price: number | null;
+  entry_source: string;
+  first_seen_at: string | null;
+  last_seen_at: string | null;
+  holding_days: number | null;
+  status: "open" | "missing" | "manually_closed_detected";
+}
+
+/** backend: services/position_manager.py ExitDecision. dry-run 청산 — broker_order_id null, real_order_placed false. */
+export interface ExitDecision {
+  timestamp: string;
+  symbol: string;
+  quantity: number;
+  average_buy_price: number | null;
+  current_price: number | null;
+  unrealized_pnl_pct: number | null;
+  exit_signal:
+    | "HOLD"
+    | "STOP_LOSS"
+    | "TRAILING_STOP"
+    | "TIME_STOP"
+    | "MANUAL_CLOSE_DETECTED"
+    | "ERROR";
+  reason: string;
+  would_sell_quantity: number;
+  broker_order_id: null;
+  real_order_placed: boolean;
+  real_orders_placed: number;
+}
+
 /** backend: services/live_records.py LiveWeeklyRecord. */
 export interface LiveWeeklyRecord {
   week_start: string;

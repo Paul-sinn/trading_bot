@@ -14,6 +14,8 @@ const getAiStatus = vi.fn().mockResolvedValue(null);
 const getBrokerSnapshot = vi.fn().mockResolvedValue(null);
 const getOrderReceipts = vi.fn().mockResolvedValue([]);
 const getExecutionStatus = vi.fn().mockResolvedValue(null);
+const getPositions = vi.fn().mockResolvedValue([]);
+const getExits = vi.fn().mockResolvedValue([]);
 vi.mock("@/lib/api", () => ({
   getPortfolio: vi.fn().mockResolvedValue(mockPortfolio),
   getLiveStatus: vi.fn().mockResolvedValue(mockLiveStatus),
@@ -24,6 +26,8 @@ vi.mock("@/lib/api", () => ({
   getBrokerSnapshot: (...args: unknown[]) => getBrokerSnapshot(...args),
   getOrderReceipts: (...args: unknown[]) => getOrderReceipts(...args),
   getExecutionStatus: (...args: unknown[]) => getExecutionStatus(...args),
+  getPositions: (...args: unknown[]) => getPositions(...args),
+  getExits: (...args: unknown[]) => getExits(...args),
   startLive: (...args: unknown[]) => startLive(...args),
   stopLive: (...args: unknown[]) => stopLive(...args),
   emergencyHalt: (...args: unknown[]) => emergencyHalt(...args),
@@ -110,6 +114,14 @@ describe("① 대시보드 페이지", () => {
       screen.getByText(
         "Real order execution is disabled. Scaffold only — no Robinhood order submitted.",
       ),
+    ).toBeInTheDocument();
+  });
+
+  it("포지션/청산 매니저 패널(dry-run only 라벨)을 렌더한다", async () => {
+    render(await DashboardPage());
+    expect(screen.getByText("포지션 / 청산 매니저")).toBeInTheDocument();
+    expect(
+      screen.getByText("Exit manager is dry-run only — no sell order submitted."),
     ).toBeInTheDocument();
   });
 
