@@ -158,10 +158,45 @@ export interface ShadowHealthFinding {
   message: string;
 }
 
+export interface ShadowOutcomeDetail {
+  scorable: boolean;
+  mature: boolean;
+  return_1d: number | null;
+  return_5d: number | null;
+  return_10d: number | null;
+  return_20d: number | null;
+  return_60d: number | null;
+  mfe: number | null;
+  mae: number | null;
+  stop_hit: boolean | null;
+  trail_hit: boolean | null;
+  time_close: boolean | null;
+}
+
+export interface ShadowDecisionDetail {
+  symbol: string;
+  decision: string; // BUY | REJECT | SKIP
+  date: string | null;
+  riskgate_result: string;
+  is_reentry: boolean | null;
+  position_state: string;
+  record_mode: string; // historical | live-forward
+  outcome: ShadowOutcomeDetail | null;
+}
+
+export interface ShadowMissedWinner {
+  symbol: string;
+  date: string;
+  decision: string; // REJECT | SKIP
+  return_60d: number;
+}
+
 export interface ShadowBuy {
   symbol: string;
   decision_date: string | null;
   reason: string;
+  record_mode: string; // historical | live-forward
+  outcome: ShadowOutcomeDetail | null;
   shadow_score: number | null;
   momentum_score: number | null;
   volume_ratio_20d: number | null;
@@ -208,7 +243,11 @@ export interface ShadowReportView {
   n_skip: number;
   riskgate_vetoes: number;
   real_orders_placed: number;
+  latest_ledger_date: string | null;
+  has_mature_outcomes: boolean;
   buys: ShadowBuy[];
+  decisions_detail: ShadowDecisionDetail[];
+  missed_winners: ShadowMissedWinner[];
   pending_counts: Record<string, number>;
   matured_counts: Record<string, number>;
   recent_outcomes: ShadowOutcomeRow[];

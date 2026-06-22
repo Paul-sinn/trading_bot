@@ -26,6 +26,10 @@ _OUTCOME_LOG = "decision_outcome_score.jsonl"
 _DAILY_MD = "daily_shadow_report.md"
 _HEALTH_JSON = "shadow_health_check.json"
 
+# missed-winner(historical 분석): REJECT/SKIP인데 이후 60d 수익이 이 임계 이상이면 표시. 전략 변경 아님.
+_MISSED_WINNER_60D = 0.20
+_MISSED_WINNER_TOP_N = 10
+
 
 class HealthFindingView(BaseModel):
     check: str
@@ -41,10 +45,28 @@ _PLAN_TRAIL = 0.20
 _PLAN_MAX_HOLD = 60
 
 
+class OutcomeDetailView(BaseModel):
+    """forward 결과(report-only). 미성숙 horizon은 None → UI "pending". 원장 없음 → 상위에서 None → "n/a"."""
+    scorable: bool = False
+    mature: bool = False              # 60d 성숙(return_60d not None)
+    return_1d: float | None = None
+    return_5d: float | None = None
+    return_10d: float | None = None
+    return_20d: float | None = None
+    return_60d: float | None = None
+    mfe: float | None = None
+    mae: float | None = None
+    stop_hit: bool | None = None
+    trail_hit: bool | None = None
+    time_close: bool | None = None
+
+
 class BuyView(BaseModel):
     symbol: str
     decision_date: str | None = None
     reason: str = ""
+    record_mode: str = "live-forward"     # historical | live-forward
+    outcome: OutcomeDetailView | None = None
     # 시그널 지표(있으면; 없으면 None — 안전).
     shadow_score: float | None = None
     momentum_score: float | None = None
@@ -81,6 +103,26 @@ class OutcomeRowView(BaseModel):
     scorable: bool
 
 
+class DecisionDetailView(BaseModel):
+    """선택 날짜의 결정 1건(필터용 — BUY/REJECT/SKIP·재진입·best/worst 60d·pending)."""
+    symbol: str
+    decision: str
+    date: str | None = None
+    riskgate_result: str = "N/A"
+    is_reentry: bool | None = None
+    position_state: str = "flat"
+    record_mode: str = "live-forward"
+    outcome: OutcomeDetailView | None = None
+
+
+class MissedWinnerView(BaseModel):
+    """REJECT/SKIP인데 이후 60d 강세 — historical 분석(전략 변경 아님)."""
+    symbol: str
+    date: str
+    decision: str
+    return_60d: float
+
+
 class ShadowReportView(BaseModel):
     available: bool
     empty_message: str | None = None
@@ -96,7 +138,11 @@ class ShadowReportView(BaseModel):
     n_skip: int = 0
     riskgate_vetoes: int = 0
     real_orders_placed: int = 0
+    latest_ledger_date: str | None = None
+    has_mature_outcomes: bool = False
     buys: list[BuyView] = []
+    decisions_detail: list[DecisionDetailView] = []
+    missed_winners: list[MissedWinnerView] = []
     pending_counts: dict[str, int] = {}
     matured_counts: dict[str, int] = {}
     recent_outcomes: list[OutcomeRowView] = []
@@ -179,15 +225,47 @@ def _plan_float(v, default):
     return default if f is None else f
 
 
-def _buy_view(rec: dict, reentry_index: dict) -> BuyView:
-    """BUY 결정 레코드를 사전검토 view로(누락/타입오류 안전). 재진입은 결과 원장에서 매칭."""
+def _ret(returns: dict, h):
+    return _optfloat(returns.get(str(h), returns.get(h)))
+
+
+def _outcome_view(rec: dict | None) -> OutcomeDetailView | None:
+    """결과 원장 행 → OutcomeDetailView(없으면 None). 미성숙 horizon은 None(UI pending)."""
+    if not rec:
+        return None
+    o = rec.get("outcome") or {}
+    returns = o.get("returns") or {}
+    r60 = _ret(returns, 60)
+    return OutcomeDetailView(
+        scorable=bool(o.get("scorable")),
+        mature=(r60 is not None),
+        return_1d=_ret(returns, 1), return_5d=_ret(returns, 5), return_10d=_ret(returns, 10),
+        return_20d=_ret(returns, 20), return_60d=r60,
+        mfe=_optfloat(o.get("mfe")), mae=_optfloat(o.get("mae")),
+        stop_hit=_optbool(o.get("stop_hit")), trail_hit=_optbool(o.get("trail_hit")),
+        time_close=_optbool(o.get("time_close")),
+    )
+
+
+def _record_mode(date, frontier) -> str:
+    """원장 frontier(최신일)보다 과거면 historical, 최신이면 live-forward."""
+    if frontier and date and str(date) < str(frontier):
+        return "historical"
+    return "live-forward"
+
+
+def _buy_view(rec: dict, reentry_index: dict, outcome_index: dict, frontier) -> BuyView:
+    """BUY 결정 레코드를 사전검토 view로(누락/타입오류 안전). 재진입·결과는 결과 원장에서 매칭."""
     shares = _optfloat(rec.get("position_shares")) or 0.0
-    re = reentry_index.get((str(rec.get("date")), str(rec.get("symbol"))), {})
+    key = (str(rec.get("date")), str(rec.get("symbol")))
+    re = reentry_index.get(key, {})
     prev_exit = re.get("previous_exit_reason")
     return BuyView(
         symbol=str(rec.get("symbol")),
         decision_date=(str(rec.get("date")) if rec.get("date") else None),
         reason=str(rec.get("reason", "") or ""),
+        record_mode=_record_mode(rec.get("date"), frontier),
+        outcome=_outcome_view(outcome_index.get(key)),
         shadow_score=_optfloat(rec.get("shadow_score")),
         momentum_score=_optfloat(rec.get("momentum_score")),
         volume_ratio_20d=_optfloat(rec.get("volume_ratio_20d")),
@@ -209,6 +287,23 @@ def _buy_view(rec: dict, reentry_index: dict) -> BuyView:
         planned_trailing_stop=_plan_float(rec.get("planned_trailing_stop"), _PLAN_TRAIL),
         planned_max_holding=(_optint(rec.get("planned_max_holding")) or _PLAN_MAX_HOLD),
         real_orders_placed=0,
+    )
+
+
+def _decision_detail_view(rec: dict, reentry_index: dict, outcome_index: dict, frontier) -> DecisionDetailView:
+    """결정 1건을 필터용 compact view로(BUY/REJECT/SKIP 공통)."""
+    shares = _optfloat(rec.get("position_shares")) or 0.0
+    key = (str(rec.get("date")), str(rec.get("symbol")))
+    re = reentry_index.get(key, {})
+    return DecisionDetailView(
+        symbol=str(rec.get("symbol")),
+        decision=str(rec.get("decision")),
+        date=(str(rec.get("date")) if rec.get("date") else None),
+        riskgate_result=_gate_result(rec.get("riskgate_passed")),
+        is_reentry=_optbool(re.get("is_reentry")),
+        position_state=("held" if shares > 0 else "flat"),
+        record_mode=_record_mode(rec.get("date"), frontier),
+        outcome=_outcome_view(outcome_index.get(key)),
     )
 
 
@@ -262,12 +357,31 @@ def load_shadow_report(reports_dir=None, date=None) -> ShadowReportView:
     n_skip = sum(1 for r in today if r.get("decision") == "SKIP")
     vetoes = sum(1 for r in today if r.get("decision") == "REJECT" and r.get("riskgate_passed") is False)
 
+    # frontier(원장 최신일) — historical vs live-forward 판정 기준.
+    frontier = _latest_date(decisions)
+
     # 재진입 컨텍스트 인덱스((date,symbol) → reentry). BUY 사전검토에 머지.
     reentry_index = {
         (str(r.get("date")), str(r.get("symbol"))): (r.get("reentry") or {})
         for r in outcomes if (r.get("reentry") or {}).get("available")
     }
-    buys = [_buy_view(r, reentry_index) for r in today if r.get("decision") == "BUY"]
+    # 결과 인덱스((date,symbol) → outcome row). BUY/decision 결과 연결에 머지.
+    outcome_index = {(str(r.get("date")), str(r.get("symbol"))): r for r in outcomes}
+
+    buys = [_buy_view(r, reentry_index, outcome_index, frontier)
+            for r in today if r.get("decision") == "BUY"]
+    decisions_detail = [_decision_detail_view(r, reentry_index, outcome_index, frontier) for r in today]
+    has_mature_outcomes = any(d.outcome is not None and d.outcome.mature for d in decisions_detail)
+
+    # missed-winner(historical 분석): REJECT/SKIP인데 이후 60d 강세(>=임계). 전 기간, 상위 N.
+    missed_winners = sorted(
+        (MissedWinnerView(symbol=str(r.get("symbol")), date=str(r.get("date")),
+                          decision=str(r.get("decision")), return_60d=_ret60(r))
+         for r in outcomes
+         if r.get("decision") in ("REJECT", "SKIP")
+         and _ret60(r) is not None and _ret60(r) >= _MISSED_WINNER_60D),
+        key=lambda m: m.return_60d, reverse=True,
+    )[:_MISSED_WINNER_TOP_N]
 
     # 결과 원장: pending/matured(BUY), 재진입, 최근.
     buy_outcomes = [r for r in outcomes if r.get("decision") == "BUY"
@@ -299,7 +413,9 @@ def load_shadow_report(reports_dir=None, date=None) -> ShadowReportView:
         selected_date=selected_date, available_dates=available_dates,
         n_buy=n_buy, n_reject=n_reject, n_skip=n_skip, riskgate_vetoes=vetoes,
         real_orders_placed=(1 if bad else 0),
-        buys=buys, pending_counts=pending, matured_counts=matured,
+        latest_ledger_date=frontier, has_mature_outcomes=has_mature_outcomes,
+        buys=buys, decisions_detail=decisions_detail, missed_winners=missed_winners,
+        pending_counts=pending, matured_counts=matured,
         recent_outcomes=recent_outcomes, reentry_total=len(reentry_rows), reentry_count=reentry_count,
         concentration_warnings=concentration, daily_markdown=daily_md,
     )
