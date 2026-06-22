@@ -204,7 +204,11 @@ def test_no_secrets_or_full_account_in_receipts(tmp_path):
 # --- API 읽기 전용 ---
 @pytest.fixture
 def reports(tmp_path, monkeypatch):
+    # execution_status는 reports_dir=None으로 호출하므로 receipt(rex) + arm(real_order_arm) 양쪽의
+    # 모듈 기본 경로를 모두 tmp로 격리한다(실 reports/ 상태에 의존하지 않게 — hermetic).
+    import backend.app.services.real_order_arm as arm_mod
     monkeypatch.setattr(rex, "DEFAULT_REPORTS_DIR", tmp_path)
+    monkeypatch.setattr(arm_mod, "DEFAULT_REPORTS_DIR", tmp_path)
     return tmp_path
 
 

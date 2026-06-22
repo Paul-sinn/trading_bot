@@ -61,6 +61,11 @@ export function ExecutionReadinessPanel({
           mono
         />
         <Item
+          label="최근 판정"
+          value={status?.latest_decision ?? "—"}
+          tone={status?.latest_decision === "REAL_READY_DRY_RUN" ? "warn" : "muted"}
+        />
+        <Item
           label="최근 차단 사유"
           value={status?.latest_block_reason ?? "—"}
           mono
