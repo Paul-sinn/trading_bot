@@ -160,12 +160,29 @@ export interface ShadowHealthFinding {
 
 export interface ShadowBuy {
   symbol: string;
+  decision_date: string | null;
+  reason: string;
+  shadow_score: number | null;
+  momentum_score: number | null;
+  volume_ratio_20d: number | null;
+  price_above_20ma: boolean | null;
+  ma20_above_ma50: boolean | null;
+  relative_strength: number | null;
+  distance_from_high: number | null;
+  riskgate_passed: boolean | null;
+  riskgate_reasons: string[];
+  riskgate_result: string; // PASS | VETO | N/A
+  position_shares: number;
+  position_state: string; // held | flat
+  is_reentry: boolean | null;
+  previous_exit_reason: string | null;
+  days_since_last_exit: number | null;
   planned_entry_type: string;
   entry_limit_buffer_pct: number;
   planned_stop_loss: number;
   planned_trailing_stop: number;
   planned_max_holding: number;
-  position_shares: number;
+  real_orders_placed: number;
 }
 
 export interface ShadowOutcomeRow {
@@ -184,6 +201,8 @@ export interface ShadowReportView {
   health_findings: ShadowHealthFinding[];
   report_date: string | null;
   reference_date: string | null;
+  selected_date: string | null;
+  available_dates: string[];
   n_buy: number;
   n_reject: number;
   n_skip: number;

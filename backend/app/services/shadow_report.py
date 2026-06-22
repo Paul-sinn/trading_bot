@@ -33,14 +33,44 @@ class HealthFindingView(BaseModel):
     message: str
 
 
+# 잠긴 베이스라인을 '서술'하는 plan 기본값(변경 아님 — 누락 시 fallback).
+_PLAN_ENTRY_TYPE = "next-bar-limit"
+_PLAN_BUFFER = 0.03
+_PLAN_STOP = 0.15
+_PLAN_TRAIL = 0.20
+_PLAN_MAX_HOLD = 60
+
+
 class BuyView(BaseModel):
     symbol: str
-    planned_entry_type: str
-    entry_limit_buffer_pct: float
-    planned_stop_loss: float
-    planned_trailing_stop: float
-    planned_max_holding: int
-    position_shares: float
+    decision_date: str | None = None
+    reason: str = ""
+    # 시그널 지표(있으면; 없으면 None — 안전).
+    shadow_score: float | None = None
+    momentum_score: float | None = None
+    volume_ratio_20d: float | None = None
+    price_above_20ma: bool | None = None
+    ma20_above_ma50: bool | None = None
+    relative_strength: float | None = None
+    distance_from_high: float | None = None
+    # RiskGate 결과.
+    riskgate_passed: bool | None = None
+    riskgate_reasons: list[str] = []
+    riskgate_result: str = "N/A"          # PASS | VETO | N/A
+    # 포지션 상태.
+    position_shares: float = 0.0
+    position_state: str = "flat"          # held | flat
+    # 재진입 컨텍스트(결과 원장에서 (date,symbol) 매칭; 없으면 None).
+    is_reentry: bool | None = None
+    previous_exit_reason: str | None = None
+    days_since_last_exit: int | None = None
+    # 주문 계획(잠긴 베이스라인 서술 — report-only).
+    planned_entry_type: str = _PLAN_ENTRY_TYPE
+    entry_limit_buffer_pct: float = _PLAN_BUFFER
+    planned_stop_loss: float = _PLAN_STOP
+    planned_trailing_stop: float = _PLAN_TRAIL
+    planned_max_holding: int = _PLAN_MAX_HOLD
+    real_orders_placed: int = 0
 
 
 class OutcomeRowView(BaseModel):
@@ -59,6 +89,8 @@ class ShadowReportView(BaseModel):
     health_findings: list[HealthFindingView] = []
     report_date: str | None = None
     reference_date: str | None = None
+    selected_date: str | None = None
+    available_dates: list[str] = []
     n_buy: int = 0
     n_reject: int = 0
     n_skip: int = 0
@@ -108,13 +140,88 @@ def _latest_date(records) -> str | None:
     return max(dates) if dates else None
 
 
+def _unique_dates_desc(records) -> list[str]:
+    return sorted({str(r.get("date")) for r in records if r.get("date")}, reverse=True)
+
+
+def _optfloat(v):
+    if v is None or isinstance(v, bool):
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _optint(v):
+    if v is None or isinstance(v, bool):
+        return None
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _optbool(v):
+    return None if v is None else bool(v)
+
+
+def _gate_result(passed) -> str:
+    if passed is False:
+        return "VETO"
+    if passed is True:
+        return "PASS"
+    return "N/A"
+
+
+def _plan_float(v, default):
+    f = _optfloat(v)
+    return default if f is None else f
+
+
+def _buy_view(rec: dict, reentry_index: dict) -> BuyView:
+    """BUY 결정 레코드를 사전검토 view로(누락/타입오류 안전). 재진입은 결과 원장에서 매칭."""
+    shares = _optfloat(rec.get("position_shares")) or 0.0
+    re = reentry_index.get((str(rec.get("date")), str(rec.get("symbol"))), {})
+    prev_exit = re.get("previous_exit_reason")
+    return BuyView(
+        symbol=str(rec.get("symbol")),
+        decision_date=(str(rec.get("date")) if rec.get("date") else None),
+        reason=str(rec.get("reason", "") or ""),
+        shadow_score=_optfloat(rec.get("shadow_score")),
+        momentum_score=_optfloat(rec.get("momentum_score")),
+        volume_ratio_20d=_optfloat(rec.get("volume_ratio_20d")),
+        price_above_20ma=_optbool(rec.get("price_above_20ma")),
+        ma20_above_ma50=_optbool(rec.get("ma20_above_ma50")),
+        relative_strength=_optfloat(rec.get("relative_strength")),
+        distance_from_high=_optfloat(rec.get("distance_from_high")),
+        riskgate_passed=_optbool(rec.get("riskgate_passed")),
+        riskgate_reasons=[str(x) for x in (rec.get("riskgate_reasons") or [])],
+        riskgate_result=_gate_result(rec.get("riskgate_passed")),
+        position_shares=shares,
+        position_state=("held" if shares > 0 else "flat"),
+        is_reentry=_optbool(re.get("is_reentry")),
+        previous_exit_reason=(str(prev_exit) if prev_exit is not None else None),
+        days_since_last_exit=_optint(re.get("days_since_last_exit")),
+        planned_entry_type=str(rec.get("planned_entry_type") or _PLAN_ENTRY_TYPE),
+        entry_limit_buffer_pct=_plan_float(rec.get("entry_limit_buffer_pct"), _PLAN_BUFFER),
+        planned_stop_loss=_plan_float(rec.get("planned_stop_loss"), _PLAN_STOP),
+        planned_trailing_stop=_plan_float(rec.get("planned_trailing_stop"), _PLAN_TRAIL),
+        planned_max_holding=(_optint(rec.get("planned_max_holding")) or _PLAN_MAX_HOLD),
+        real_orders_placed=0,
+    )
+
+
 def _ret60(rec) -> float | None:
     returns = (rec.get("outcome", {}) or {}).get("returns", {}) or {}
     return returns.get("60", returns.get(60))
 
 
-def load_shadow_report(reports_dir=None) -> ShadowReportView:
-    """reports/ 산출물을 읽어 UI view model을 만든다. 파일 없음/ malformed 안전."""
+def load_shadow_report(reports_dir=None, date=None) -> ShadowReportView:
+    """reports/ 산출물을 읽어 UI view model을 만든다. 파일 없음/ malformed 안전.
+
+    date 지정 시 해당 거래일로 필터해 과거 BUY 예시를 리뷰한다(읽기 전용 — 원장 미변경).
+    """
     base = Path(reports_dir) if reports_dir is not None else _DEFAULT_REPORTS
 
     health = _read_json_safe(base / _HEALTH_JSON)
@@ -145,23 +252,22 @@ def load_shadow_report(reports_dir=None) -> ShadowReportView:
                     message=str(f.get("message", "")),
                 ))
 
-    # 최신 거래일 결정 카운트.
-    report_date = health_report_date or _latest_date(decisions)
+    # 거래일 결정 카운트. date 지정 시 그 날짜(과거 BUY 예시 리뷰), 아니면 최신.
+    available_dates = _unique_dates_desc(decisions)
+    selected_date = str(date) if date else None
+    report_date = selected_date or health_report_date or _latest_date(decisions)
     today = [r for r in decisions if str(r.get("date")) == str(report_date)] if report_date else []
     n_buy = sum(1 for r in today if r.get("decision") == "BUY")
     n_reject = sum(1 for r in today if r.get("decision") == "REJECT")
     n_skip = sum(1 for r in today if r.get("decision") == "SKIP")
     vetoes = sum(1 for r in today if r.get("decision") == "REJECT" and r.get("riskgate_passed") is False)
 
-    buys = [BuyView(
-        symbol=str(r.get("symbol")),
-        planned_entry_type=str(r.get("planned_entry_type", "next-bar-limit")),
-        entry_limit_buffer_pct=float(r.get("entry_limit_buffer_pct", 0.03)),
-        planned_stop_loss=float(r.get("planned_stop_loss", 0.15)),
-        planned_trailing_stop=float(r.get("planned_trailing_stop", 0.20)),
-        planned_max_holding=int(r.get("planned_max_holding", 60)),
-        position_shares=float(r.get("position_shares", 0.0) or 0.0),
-    ) for r in today if r.get("decision") == "BUY"]
+    # 재진입 컨텍스트 인덱스((date,symbol) → reentry). BUY 사전검토에 머지.
+    reentry_index = {
+        (str(r.get("date")), str(r.get("symbol"))): (r.get("reentry") or {})
+        for r in outcomes if (r.get("reentry") or {}).get("available")
+    }
+    buys = [_buy_view(r, reentry_index) for r in today if r.get("decision") == "BUY"]
 
     # 결과 원장: pending/matured(BUY), 재진입, 최근.
     buy_outcomes = [r for r in outcomes if r.get("decision") == "BUY"
@@ -190,6 +296,7 @@ def load_shadow_report(reports_dir=None) -> ShadowReportView:
     return ShadowReportView(
         available=True, health_status=health_status, health_findings=findings,
         report_date=report_date, reference_date=reference_date,
+        selected_date=selected_date, available_dates=available_dates,
         n_buy=n_buy, n_reject=n_reject, n_skip=n_skip, riskgate_vetoes=vetoes,
         real_orders_placed=(1 if bad else 0),
         buys=buys, pending_counts=pending, matured_counts=matured,

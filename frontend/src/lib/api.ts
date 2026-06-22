@@ -75,16 +75,24 @@ export function createGoalPlan(req: GoalPlanRequest): Promise<GoalPlan | null> {
  * 섀도 리포트 view(report-only). backend가 reports/ 산출물을 읽어 반환한다(거래소/LLM 미호출).
  * 실패 시 null (호출부에서 빈 상태 처리).
  */
-export function getShadowReport(): Promise<ShadowReportView | null> {
-  return apiFetch<ShadowReportView>("/api/shadow");
+export function getShadowReport(
+  date?: string | null,
+): Promise<ShadowReportView | null> {
+  const qs = date ? `?date=${encodeURIComponent(date)}` : "";
+  return apiFetch<ShadowReportView>(`/api/shadow${qs}`);
 }
 
 /**
- * 일간 섀도 리포트 재생성(report-only). backend가 `python -m experiments.daily_shadow_report`만
- * 실행한다 — 주문 절대 없음. 실패 시 null.
+ * 일간 섀도 리포트 재생성(report-only). backend가 `python -m experiments.daily_shadow_report`(+ 검증된
+ * --date)만 실행한다 — 주문 절대 없음. date는 과거 BUY 예시 리뷰용. 실패 시 null.
  */
-export function runDailyShadow(): Promise<ShadowRunResult | null> {
-  return apiFetch<ShadowRunResult>("/api/shadow/run", { method: "POST" });
+export function runDailyShadow(
+  date?: string | null,
+): Promise<ShadowRunResult | null> {
+  return apiFetch<ShadowRunResult>("/api/shadow/run", {
+    method: "POST",
+    body: JSON.stringify({ date: date ?? null }),
+  });
 }
 
 /**
