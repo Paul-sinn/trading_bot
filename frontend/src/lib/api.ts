@@ -6,6 +6,8 @@ import type {
   GoalPlanRequest,
   MarketDirection,
   Portfolio,
+  ShadowReportView,
+  ShadowRunResult,
   Trade,
   WeeklyReport,
 } from "@/types";
@@ -67,6 +69,22 @@ export function createGoalPlan(req: GoalPlanRequest): Promise<GoalPlan | null> {
     method: "POST",
     body: JSON.stringify(req),
   });
+}
+
+/**
+ * 섀도 리포트 view(report-only). backend가 reports/ 산출물을 읽어 반환한다(거래소/LLM 미호출).
+ * 실패 시 null (호출부에서 빈 상태 처리).
+ */
+export function getShadowReport(): Promise<ShadowReportView | null> {
+  return apiFetch<ShadowReportView>("/api/shadow");
+}
+
+/**
+ * 일간 섀도 리포트 재생성(report-only). backend가 `python -m experiments.daily_shadow_report`만
+ * 실행한다 — 주문 절대 없음. 실패 시 null.
+ */
+export function runDailyShadow(): Promise<ShadowRunResult | null> {
+  return apiFetch<ShadowRunResult>("/api/shadow/run", { method: "POST" });
 }
 
 /**

@@ -150,3 +150,58 @@ export interface GoalPlanRecord {
   applied: boolean;
   created_at: string;
 }
+
+// --- 섀도 리포트 view (report-only, /api/shadow) ---
+export interface ShadowHealthFinding {
+  check: string;
+  status: string;
+  message: string;
+}
+
+export interface ShadowBuy {
+  symbol: string;
+  planned_entry_type: string;
+  entry_limit_buffer_pct: number;
+  planned_stop_loss: number;
+  planned_trailing_stop: number;
+  planned_max_holding: number;
+  position_shares: number;
+}
+
+export interface ShadowOutcomeRow {
+  date: string;
+  symbol: string;
+  decision: string;
+  return_60d: number | null;
+  scorable: boolean;
+}
+
+export interface ShadowReportView {
+  available: boolean;
+  empty_message: string | null;
+  run_command: string;
+  health_status: string;
+  health_findings: ShadowHealthFinding[];
+  report_date: string | null;
+  reference_date: string | null;
+  n_buy: number;
+  n_reject: number;
+  n_skip: number;
+  riskgate_vetoes: number;
+  real_orders_placed: number;
+  buys: ShadowBuy[];
+  pending_counts: Record<string, number>;
+  matured_counts: Record<string, number>;
+  recent_outcomes: ShadowOutcomeRow[];
+  reentry_total: number;
+  reentry_count: number;
+  concentration_warnings: string[];
+  daily_markdown: string | null;
+}
+
+export interface ShadowRunResult {
+  ok: boolean;
+  returncode: number;
+  tail: string;
+  real_orders_placed: number;
+}

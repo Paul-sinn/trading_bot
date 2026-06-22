@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: "/weekly", label: "주간 거래기록" },
   { href: "/direction", label: "방향성 & AI" },
   { href: "/goals", label: "목표 & 리스크" },
+  { href: "/shadow", label: "섀도 리포트" },
   { href: "/profile", label: "투자성향 설정" },
 ];
 
