@@ -32,6 +32,12 @@ from backend.app.services.live_records import (
     load_daily_records,
     upsert_daily_record,
 )
+from backend.app.services.candidate_pipeline import (
+    AiStatus,
+    Candidate,
+    CandidatePipeline,
+)
+from backend.app.services.execution_gate import OrderIntent
 from backend.app.services.live_scan import LiveScanLoop, ScanEvent, load_scan_events
 from backend.app.services.market_data import (
     MarketDataProvider,
@@ -84,6 +90,14 @@ class LiveSessionState(BaseModel):
     last_scan_at: str | None = None
     last_scan_event_count: int = 0
     latest_buy_candidates: list[str] = Field(default_factory=list)
+    # Mock LLM 의사결정 파이프라인 상태(무비용 — ai_cost_estimate_today는 항상 0.0).
+    latest_candidates: list[Candidate] = Field(default_factory=list)
+    latest_order_intents: list[OrderIntent] = Field(default_factory=list)
+    ai_calls_today: int = 0
+    ai_cost_estimate_today: float = 0.0
+    llm_provider: str = ""
+    llm_budget_status: str = ""
+    latest_review_at: str | None = None
 
 
 class LiveActionResult(BaseModel):
@@ -102,6 +116,7 @@ class LiveSessionManager:
         *,
         adapter: RobinhoodMcpAdapter | None = None,
         market_data: MarketDataProvider | None = None,
+        pipeline: CandidatePipeline | None = None,
         settings: Settings | None = None,
         reports_dir: Path | None = None,
     ) -> None:
@@ -115,6 +130,10 @@ class LiveSessionManager:
         self._scan_thread: threading.Thread | None = None
         self._scan_stop = threading.Event()
         self._scan_lock = threading.Lock()
+        # Mock LLM 의사결정 파이프라인(무비용 dry-run). BUY_CANDIDATE → 리뷰 → ExecutionGate → OrderIntent.
+        self._pipeline = pipeline or CandidatePipeline(
+            settings=self._get_settings(), reports_dir=reports_dir
+        )
 
     # --- 의존성 헬퍼(주입 우선, 없으면 fresh) ---
     def _get_settings(self) -> Settings:
@@ -172,11 +191,21 @@ class LiveSessionManager:
         self._state.market_data_status = provider_status
         self._state.last_heartbeat = _now_iso()
         self._state.real_orders_placed = 0  # 불변식 강제
+        self._refresh_pipeline_state()  # 읽기 전용 — AI/후보/intent 필드 동기화(스캔/리뷰 시작 없음)
         return self._state.model_copy()
 
-    # --- 스캔 이벤트 조회(읽기 전용 — 스캔 시작 안 함, 주문 없음) ---
+    # --- 스캔/파이프라인 조회(읽기 전용 — 스캔/리뷰 시작 안 함, 주문 없음) ---
     def scan_events(self, limit: int = 50) -> list[ScanEvent]:
         return load_scan_events(limit=limit, reports_dir=self._reports_dir)
+
+    def candidates(self, limit: int = 50) -> list[Candidate]:
+        return self._pipeline.candidates(limit=limit)
+
+    def order_intents(self, limit: int = 50) -> list[OrderIntent]:
+        return self._pipeline.order_intents(limit=limit)
+
+    def ai_status(self) -> AiStatus:
+        return self._pipeline.ai_status()
 
     def start(self, mode: TradingMode = "report_only") -> LiveActionResult:
         settings = self._get_settings()
@@ -296,6 +325,30 @@ class LiveSessionManager:
         self._state.last_scan_at = _now_iso()
         self._state.last_scan_event_count = len(events)
         self._state.latest_buy_candidates = [e.symbol for e in events if e.buy_candidate]
+
+        # BUY_CANDIDATE → Mock LLM 리뷰 → ExecutionGate(dry-run) → OrderIntent. 무비용·무주문.
+        # Stop/Emergency-Halt면 automation_running/emergency_halt 가드가 처리 자체를 막는다.
+        try:
+            self._pipeline.process_scan_events(
+                events,
+                session_id=self._state.session_id,
+                trading_mode=self._state.trading_mode,
+                automation_running=self._state.automation_running,
+                emergency_halt=self._state.emergency_halt,
+            )
+        except Exception:  # noqa: BLE001 - 파이프라인 실패가 세션을 죽이지 않게(graceful)
+            pass
+        self._refresh_pipeline_state()
+
+    def _refresh_pipeline_state(self) -> None:
+        ai = self._pipeline.ai_status()
+        self._state.ai_calls_today = ai.ai_calls_today
+        self._state.ai_cost_estimate_today = 0.0  # 불변식: mock 무비용
+        self._state.llm_provider = ai.llm_provider
+        self._state.llm_budget_status = ai.llm_budget_status
+        self._state.latest_review_at = ai.latest_review_at
+        self._state.latest_candidates = self._pipeline.candidates(limit=10)
+        self._state.latest_order_intents = self._pipeline.order_intents(limit=10)
 
     def _stop_scan(self) -> None:
         self._scan_stop.set()

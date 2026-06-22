@@ -212,3 +212,43 @@ def test_scan_events_read_only_no_orders(tmp_path):
         client.get("/api/live/status")
     # report_only 스캔/조회는 브로커 주문을 절대 내지 않는다.
     assert adapter.order_calls == 0
+
+
+# --- Mock LLM 파이프라인 API ---
+
+def test_candidates_and_intents_after_start(tmp_path):
+    client.post("/api/live/start", json={"mode": "report_only"})
+    cands = client.get("/api/live/candidates?limit=50").json()
+    intents = client.get("/api/live/order-intents?limit=50").json()
+    assert len(cands) > 0
+    assert len(intents) > 0
+    assert all(i["real_orders_placed"] == 0 for i in intents)
+    assert all(i["status"] == "DRY_RUN_INTENT_ONLY" for i in intents)
+    assert all(i["broker_order_id"] is None for i in intents)
+
+
+def test_ai_status_endpoint_zero_cost(tmp_path):
+    client.post("/api/live/start", json={"mode": "report_only"})
+    body = client.get("/api/ai/status").json()
+    assert body["llm_provider"] == "mock"
+    assert body["ai_cost_estimate_today"] == 0.0
+    assert body["ai_calls_today"] > 0
+
+
+def test_status_includes_pipeline_fields(tmp_path):
+    client.post("/api/live/start", json={"mode": "report_only"})
+    body = client.get("/api/live/status").json()
+    assert body["llm_provider"] == "mock"
+    assert body["ai_cost_estimate_today"] == 0.0
+    assert body["ai_calls_today"] > 0
+    assert "latest_candidates" in body
+    assert "latest_order_intents" in body
+
+
+def test_read_endpoints_do_not_mutate(tmp_path):
+    # 시작 전 read 엔드포인트는 후보/intent를 만들지 않는다(읽기 전용).
+    for _ in range(3):
+        assert client.get("/api/live/candidates").json() == []
+        assert client.get("/api/live/order-intents").json() == []
+        b = client.get("/api/ai/status").json()
+        assert b["ai_calls_today"] == 0  # read가 LLM을 호출하지 않음

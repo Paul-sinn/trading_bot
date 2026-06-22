@@ -5,7 +5,13 @@ import { Card } from "@/components/ui/Card";
 import { Gauge } from "@/components/ui/Gauge";
 import { LiveControls } from "@/components/dashboard/LiveControls";
 import { LiveTicker } from "@/components/dashboard/LiveTicker";
-import { getLiveStatus, getPortfolio, getScanEvents } from "@/lib/api";
+import {
+  getCandidates,
+  getLiveStatus,
+  getOrderIntents,
+  getPortfolio,
+  getScanEvents,
+} from "@/lib/api";
 import { mockLiveStatus, mockPortfolio, mockTrades } from "@/lib/mock";
 import { formatUsd, pnlColorClass } from "@/lib/utils";
 
@@ -29,6 +35,8 @@ export default async function DashboardPage() {
   const portfolio = (await getPortfolio()) ?? mockPortfolio;
   const liveStatus = (await getLiveStatus()) ?? mockLiveStatus;
   const scanEvents = (await getScanEvents(50)) ?? [];
+  const candidates = (await getCandidates(50)) ?? [];
+  const orderIntents = (await getOrderIntents(50)) ?? [];
   const wr = winRate();
   const risk = exposurePct(portfolio.total_equity, portfolio.cash);
 
@@ -77,6 +85,8 @@ export default async function DashboardPage() {
         <LiveControls
           initialStatus={liveStatus}
           initialScanEvents={scanEvents}
+          initialCandidates={candidates}
+          initialOrderIntents={orderIntents}
         />
       </Card>
 

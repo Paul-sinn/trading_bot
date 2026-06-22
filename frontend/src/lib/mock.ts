@@ -35,6 +35,13 @@ export const mockLiveStatus: LiveSessionState = {
   last_scan_at: null,
   last_scan_event_count: 0,
   latest_buy_candidates: [],
+  latest_candidates: [],
+  latest_order_intents: [],
+  ai_calls_today: 0,
+  ai_cost_estimate_today: 0,
+  llm_provider: "mock",
+  llm_budget_status: "OK",
+  latest_review_at: null,
 };
 
 export const mockPortfolio: Portfolio = {

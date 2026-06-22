@@ -29,6 +29,18 @@ class Settings(BaseSettings):
     live_scan_interval_seconds: int = 300
     live_scan_max_symbols_per_cycle: int = 0  # 0 → 베이스라인 유니버스 전체
 
+    # Mock LLM 의사결정 파이프라인(무비용). LLM_PROVIDER 기본 mock — 실 LLM API 경로 없음(fail-closed).
+    # mock 리뷰는 ai_calls_today에 카운트되지만 비용은 항상 0.00이다.
+    llm_provider: str = "mock"
+    max_llm_calls_per_day: int = 50
+    max_llm_cost_usd_per_day: float = 5.00
+    min_llm_cooldown_seconds_per_symbol: int = 900
+    # ExecutionGate dry-run 한도(실주문 없음 — 계획 수치 검증용).
+    max_notional_per_order_usd: float = 1000.0
+    max_daily_order_intents: int = 20
+    max_total_intended_exposure_usd: float = 5000.0
+    live_strategy_id: str = "ts_momentum_pullback_v1"
+
     claude_api_key: str | None = None
     database_url: str = "sqlite:///./trading_bot.db"
     redis_url: str = "redis://localhost:6379/0"

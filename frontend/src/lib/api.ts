@@ -1,14 +1,17 @@
 // backend REST fetch 래퍼. 외부 거래소/AI는 절대 직접 호출하지 않고
 // backend(SSOT)만 호출한다 (CLAUDE.md CRITICAL / ADR-001).
 import type {
+  AiStatus,
   GoalPlan,
   GoalPlanRecord,
   GoalPlanRequest,
   LiveActionResult,
+  LiveCandidate,
   LiveDailyRecord,
   LiveScanEvent,
   LiveSessionState,
   LiveWeeklyRecord,
+  OrderIntent,
   MarketDirection,
   Portfolio,
   ShadowReportView,
@@ -166,4 +169,19 @@ export function getLiveWeekly(): Promise<LiveWeeklyRecord[] | null> {
 /** 최근 라이브 스캔 이벤트(읽기 전용 — 스캔 시작 안 함, 주문 없음). 실패 시 null. */
 export function getScanEvents(limit = 50): Promise<LiveScanEvent[] | null> {
   return apiFetch<LiveScanEvent[]>(`/api/live/scan-events?limit=${limit}`);
+}
+
+/** 최근 BUY 후보 + mock LLM 리뷰(읽기 전용 — 리뷰/주문 시작 안 함). 실패 시 null. */
+export function getCandidates(limit = 50): Promise<LiveCandidate[] | null> {
+  return apiFetch<LiveCandidate[]>(`/api/live/candidates?limit=${limit}`);
+}
+
+/** 최근 dry-run OrderIntent(읽기 전용 — 주문 아님). 실패 시 null. */
+export function getOrderIntents(limit = 50): Promise<OrderIntent[] | null> {
+  return apiFetch<OrderIntent[]>(`/api/live/order-intents?limit=${limit}`);
+}
+
+/** AI 예산/쿨다운 상태(읽기 전용 — LLM 호출 없음, cost 0.00). 실패 시 null. */
+export function getAiStatus(): Promise<AiStatus | null> {
+  return apiFetch<AiStatus>("/api/ai/status");
 }

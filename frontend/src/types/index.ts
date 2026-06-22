@@ -288,6 +288,87 @@ export interface LiveSessionState {
   last_scan_at: string | null;
   last_scan_event_count: number;
   latest_buy_candidates: string[];
+  // Mock LLM 의사결정 파이프라인 상태(무비용 — ai_cost_estimate_today는 항상 0.0).
+  latest_candidates: LiveCandidate[];
+  latest_order_intents: OrderIntent[];
+  ai_calls_today: number;
+  ai_cost_estimate_today: number;
+  llm_provider: string;
+  llm_budget_status: string;
+  latest_review_at: string | null;
+}
+
+/** backend: services/llm_review.py ReviewResult. mock LLM 리뷰(cost 0.00). */
+export interface LlmReviewResult {
+  symbol: string;
+  decision: "approve" | "veto" | "needs_review";
+  confidence: number;
+  reason: string;
+  risk_notes: string;
+  can_reduce_notional: boolean;
+  max_notional_override_usd: number | null;
+  cost_usd: number;
+  provider_name: string;
+}
+
+/** backend: services/candidate_pipeline.py Candidate. */
+export interface LiveCandidate {
+  key: string;
+  scan_event_key: string;
+  session_id: string | null;
+  symbol: string;
+  date: string;
+  strategy_id: string;
+  price: number | null;
+  status:
+    | "queued"
+    | "reviewed"
+    | "vetoed"
+    | "approved"
+    | "needs_review"
+    | "blocked_by_execution_gate";
+  review: LlmReviewResult | null;
+  rejection_reasons: string[];
+  block_reason: "AI_BUDGET_EXCEEDED" | "LLM_COOLDOWN_ACTIVE" | null;
+  created_at: string;
+  reviewed_at: string | null;
+}
+
+/** backend: services/execution_gate.py OrderIntent. dry-run only — real_orders_placed=0. */
+export interface OrderIntent {
+  timestamp: string;
+  session_id: string | null;
+  trading_mode: string;
+  strategy_id: string;
+  symbol: string;
+  side: string;
+  scan_event_key: string;
+  mock_llm_decision: string;
+  mock_llm_confidence: number;
+  mock_llm_reason: string;
+  execution_gate_status: "accepted_dry_run" | "rejected";
+  rejection_reasons: string[];
+  planned_order_type: string;
+  planned_limit_price: number | null;
+  planned_notional_usd: number | null;
+  planned_quantity: number | null;
+  real_orders_placed: number;
+  broker_order_id: null;
+  status: string;
+}
+
+/** backend: services/candidate_pipeline.py AiStatus. */
+export interface AiStatus {
+  llm_provider: string;
+  ai_calls_today: number;
+  ai_cost_estimate_today: number;
+  ai_budget_remaining: number;
+  max_llm_calls_per_day: number;
+  max_llm_cost_usd_per_day: number;
+  cooldown_seconds_per_symbol: number;
+  llm_budget_status: string;
+  latest_review_at: string | null;
+  last_review_by_symbol: Record<string, string>;
 }
 
 /** backend: services/live_scan.py ScanEvent. report_only 스캔 결과(real_orders_placed=0). */

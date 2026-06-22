@@ -170,6 +170,63 @@ def test_scan_events_never_place_orders(tmp_path):
     mgr.shutdown()
 
 
+# --- Mock LLM 의사결정 파이프라인 통합 ---
+
+def test_report_only_start_produces_candidates_and_intents(tmp_path):
+    mgr = _mgr(tmp_path)
+    mgr.start("report_only")
+    cands = mgr.candidates(limit=100)
+    intents = mgr.order_intents(limit=100)
+    assert cands  # BUY_CANDIDATE가 후보로 처리됨
+    assert intents  # approve가 dry-run OrderIntent로
+    assert all(i.real_orders_placed == 0 for i in intents)
+    assert all(i.status == "DRY_RUN_INTENT_ONLY" for i in intents)
+    assert all(i.broker_order_id is None for i in intents)
+    mgr.shutdown()
+
+
+def test_status_carries_ai_fields(tmp_path):
+    mgr = _mgr(tmp_path)
+    mgr.start("report_only")
+    s = mgr.status()
+    assert s.llm_provider == "mock"
+    assert s.ai_cost_estimate_today == 0.0
+    assert s.ai_calls_today > 0
+    assert s.latest_candidates  # 상태에 후보 노출
+    mgr.shutdown()
+
+
+def test_ai_status_zero_cost(tmp_path):
+    mgr = _mgr(tmp_path)
+    mgr.start("report_only")
+    ai = mgr.ai_status()
+    assert ai.llm_provider == "mock"
+    assert ai.ai_cost_estimate_today == 0.0
+    assert ai.ai_budget_remaining >= 0
+    mgr.shutdown()
+
+
+def test_stop_blocks_candidate_processing(tmp_path):
+    mgr = _mgr(tmp_path)
+    mgr.start("report_only")
+    mgr.stop("manual")
+    # 정지 후 파이프라인은 처리하지 않는다(automation_running=False 가드).
+    assert mgr._pipeline.process_scan_events(
+        [], session_id="s", trading_mode="report_only",
+        automation_running=mgr.status().automation_running,
+        emergency_halt=mgr.status().emergency_halt,
+    ) == []
+    assert mgr.status().automation_running is False
+
+
+def test_emergency_halt_blocks_candidate_processing(tmp_path):
+    mgr = _mgr(tmp_path)
+    mgr.start("report_only")
+    mgr.emergency_halt()
+    assert mgr.status().emergency_halt is True
+    assert mgr.status().automation_running is False
+
+
 def test_start_blocked_when_live_disabled(tmp_path):
     mgr = _mgr(tmp_path, adapter=FakeAvailableAdapter(), live_enabled=False)
     res = mgr.start("live_auto")

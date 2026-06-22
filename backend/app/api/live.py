@@ -17,6 +17,8 @@ import re
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from backend.app.services.candidate_pipeline import AiStatus, Candidate
+from backend.app.services.execution_gate import OrderIntent
 from backend.app.services.live_records import (
     LiveDailyRecord,
     LiveWeeklyRecord,
@@ -85,3 +87,21 @@ async def live_weekly_record() -> list[LiveWeeklyRecord]:
 async def live_scan_events(limit: int = 50) -> list[ScanEvent]:
     """최근 라이브 스캔 이벤트(읽기 전용 — 스캔 시작 안 함, 주문 없음). limit 1..500 clamp."""
     return get_session_manager().scan_events(limit)
+
+
+@router.get("/api/live/candidates", response_model=list[Candidate])
+async def live_candidates(limit: int = 50) -> list[Candidate]:
+    """최근 BUY 후보 + mock LLM 리뷰 결과(읽기 전용 — 리뷰/주문 시작 안 함)."""
+    return get_session_manager().candidates(limit)
+
+
+@router.get("/api/live/order-intents", response_model=list[OrderIntent])
+async def live_order_intents(limit: int = 50) -> list[OrderIntent]:
+    """최근 dry-run OrderIntent(읽기 전용 — 주문 아님, real_orders_placed=0)."""
+    return get_session_manager().order_intents(limit)
+
+
+@router.get("/api/ai/status", response_model=AiStatus)
+async def ai_status() -> AiStatus:
+    """AI 예산/쿨다운 셸 상태(읽기 전용 — LLM 호출 없음, ai_cost_estimate_today=0.00)."""
+    return get_session_manager().ai_status()

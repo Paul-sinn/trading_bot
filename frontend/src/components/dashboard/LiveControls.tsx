@@ -11,13 +11,22 @@ import {
   startLive,
   stopLive,
 } from "@/lib/api";
-import type { LiveScanEvent, LiveSessionState } from "@/types";
+import type {
+  LiveCandidate,
+  LiveScanEvent,
+  LiveSessionState,
+  OrderIntent,
+} from "@/types";
 
 interface LiveControlsProps {
   /** 서버에서 받은 초기 상태(읽기 전용). 실패 시 호출부가 mock(정지) 폴백. */
   initialStatus: LiveSessionState;
   /** 서버에서 받은 초기 스캔 이벤트(읽기 전용). 스캔 오류 표시에 사용. */
   initialScanEvents?: LiveScanEvent[];
+  /** 서버에서 받은 초기 BUY 후보 + mock LLM 리뷰(읽기 전용). */
+  initialCandidates?: LiveCandidate[];
+  /** 서버에서 받은 초기 dry-run OrderIntent(읽기 전용). */
+  initialOrderIntents?: OrderIntent[];
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -31,6 +40,8 @@ const STATUS_LABEL: Record<string, string> = {
 export function LiveControls({
   initialStatus,
   initialScanEvents = [],
+  initialCandidates = [],
+  initialOrderIntents = [],
 }: LiveControlsProps) {
   const [status, setStatus] = useState<LiveSessionState>(initialStatus);
   const [busy, setBusy] = useState(false);
@@ -39,6 +50,15 @@ export function LiveControls({
   const scanErrors = initialScanEvents.filter(
     (e) => e.scan_status === "ERROR",
   );
+  // 상태의 latest_*가 비어 있으면 서버 props로 폴백(읽기 전용).
+  const candidates =
+    status.latest_candidates.length > 0
+      ? status.latest_candidates
+      : initialCandidates;
+  const orderIntents =
+    status.latest_order_intents.length > 0
+      ? status.latest_order_intents
+      : initialOrderIntents;
 
   async function onStart() {
     setBusy(true);
@@ -174,6 +194,62 @@ export function LiveControls({
         </Button>
       </div>
 
+      {/* Mock LLM 의사결정 파이프라인(무비용 dry-run) */}
+      <div className="space-y-2 border-t border-neutral-800 pt-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-amber-400">
+            Mock LLM only — no paid API, no real orders
+          </span>
+          <span className="text-xs tabular-nums text-neutral-500">
+            AI calls today: {status.ai_calls_today} · AI cost = $
+            {status.ai_cost_estimate_today.toFixed(2)}
+          </span>
+        </div>
+
+        {candidates.length === 0 ? (
+          <div className="text-xs text-neutral-600">
+            BUY 후보 없음 (스캔 대기)
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {candidates.slice(-5).map((c) => {
+              const intent = orderIntents.find(
+                (o) => o.scan_event_key === c.scan_event_key,
+              );
+              return (
+                <div
+                  key={c.key}
+                  className="flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded-md bg-neutral-900 px-3 py-1.5 text-xs"
+                >
+                  <span className="font-mono font-semibold text-white">
+                    {c.symbol}
+                  </span>
+                  <span className={reviewToneClass(c.review?.decision)}>
+                    {c.review?.decision ?? c.block_reason ?? c.status}
+                    {c.review
+                      ? ` (${(c.review.confidence * 100).toFixed(0)}%)`
+                      : ""}
+                  </span>
+                  <span className="text-neutral-500">
+                    gate: {intent?.execution_gate_status ?? c.status}
+                  </span>
+                  {intent?.execution_gate_status === "accepted_dry_run" && (
+                    <span className="tabular-nums text-neutral-400">
+                      ${intent.planned_limit_price?.toFixed(2)} ×{" "}
+                      {intent.planned_quantity?.toFixed(3)} = $
+                      {intent.planned_notional_usd?.toFixed(0)}
+                    </span>
+                  )}
+                  <span className="tabular-nums text-neutral-600">
+                    orders={intent?.real_orders_placed ?? 0}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {scanErrors.length > 0 && (
         <div className="space-y-1 rounded-md border border-red-900/50 bg-red-950/30 px-3 py-2">
           <div className="text-xs font-medium text-[#ef4444]">
@@ -193,6 +269,13 @@ export function LiveControls({
       )}
     </div>
   );
+}
+
+function reviewToneClass(decision?: string): string {
+  if (decision === "approve") return "font-semibold text-[#22c55e]";
+  if (decision === "veto") return "font-semibold text-[#ef4444]";
+  if (decision === "needs_review") return "font-semibold text-amber-400";
+  return "font-semibold text-neutral-400";
 }
 
 function fmtScanTime(iso: string | null): string {

@@ -8,10 +8,16 @@ const startLive = vi.fn();
 const stopLive = vi.fn();
 const emergencyHalt = vi.fn();
 const getScanEvents = vi.fn().mockResolvedValue([]);
+const getCandidates = vi.fn().mockResolvedValue([]);
+const getOrderIntents = vi.fn().mockResolvedValue([]);
+const getAiStatus = vi.fn().mockResolvedValue(null);
 vi.mock("@/lib/api", () => ({
   getPortfolio: vi.fn().mockResolvedValue(mockPortfolio),
   getLiveStatus: vi.fn().mockResolvedValue(mockLiveStatus),
   getScanEvents: (...args: unknown[]) => getScanEvents(...args),
+  getCandidates: (...args: unknown[]) => getCandidates(...args),
+  getOrderIntents: (...args: unknown[]) => getOrderIntents(...args),
+  getAiStatus: (...args: unknown[]) => getAiStatus(...args),
   startLive: (...args: unknown[]) => startLive(...args),
   stopLive: (...args: unknown[]) => stopLive(...args),
   emergencyHalt: (...args: unknown[]) => emergencyHalt(...args),
@@ -63,6 +69,14 @@ describe("① 대시보드 페이지", () => {
     expect(
       screen.getByText("report_only monitoring — no real orders"),
     ).toBeInTheDocument();
+  });
+
+  it("Mock LLM 파이프라인 라벨과 AI 비용 $0.00을 표시한다", async () => {
+    render(await DashboardPage());
+    expect(
+      screen.getByText("Mock LLM only — no paid API, no real orders"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/AI cost = \$0\.00/)).toBeInTheDocument();
   });
 
   it("렌더(=새로고침)는 절대 매매를 시작하거나 주문을 내지 않는다", async () => {
