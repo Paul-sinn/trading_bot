@@ -142,6 +142,8 @@ def test_runner_idempotent_append_and_pending(monkeypatch, tmp_path):
                         lambda *, settings, end=None, simulate_fn=None: (rep_date, today, None))
     monkeypatch.setattr(dsr.run_sim, "load_norgate_folder", lambda root: {"MU": df})
     monkeypatch.setattr(dsr, "compute_trade_diagnostics", lambda md: SimpleNamespace(trades=()))
+    monkeypatch.setattr(dsr, "run_shadow_health",
+                        lambda **k: (SimpleNamespace(status="PASS", findings=()), None))
     captured = {}
 
     def _fake(args):

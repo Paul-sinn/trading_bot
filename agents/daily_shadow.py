@@ -111,6 +111,8 @@ class DailyShadowReport:
     top1_share: float | None
     top3_share: float | None
     ledger_total: int
+    health_status: str = "PASS"
+    health_warnings: tuple = field(default_factory=tuple)
     warnings: tuple = field(default_factory=tuple)
 
     @property
@@ -129,7 +131,7 @@ def _top_reasons(records, decision, *, n=5):
 
 
 def build_daily_shadow(date, today_records, scored, existing_outcomes_by_id, *, buy_summary,
-                       horizons=HORIZONS) -> DailyShadowReport:
+                       horizons=HORIZONS, health_status="PASS", health_warnings=()) -> DailyShadowReport:
     """오늘 결정 + 전체 원장 채점으로 일간 섀도 리포트를 만든다."""
     today_records = tuple(today_records)
     n_buy = sum(1 for r in today_records if r.decision == "BUY")
@@ -159,7 +161,8 @@ def build_daily_shadow(date, today_records, scored, existing_outcomes_by_id, *, 
         avg_matured_return={h: buy_summary.avg_returns.get(h) for h in horizons},
         reentry_total=len(reentry_rows), reentry_count=reentry_count,
         top1_symbol=buy_summary.top1_symbol, top1_share=buy_summary.top1_share,
-        top3_share=buy_summary.top3_share, ledger_total=len(tuple(scored)), warnings=tuple(warnings),
+        top3_share=buy_summary.top3_share, ledger_total=len(tuple(scored)),
+        health_status=health_status, health_warnings=tuple(health_warnings), warnings=tuple(warnings),
     )
 
 
@@ -174,6 +177,10 @@ def format_daily_shadow_markdown(report: DailyShadowReport) -> str:
     lines.append("")
     lines.append("> 실험/리포트 전용. 브로커·라이브 주문 없음. `real_orders_placed = 0`. 결정 누적 + 성숙한 결과 "
                  "채점 — 스캐너/디시전/사이징/RiskGate·진입/청산/유니버스·베이스라인 미변경. forward만 사용.")
+    lines.append("")
+    badge = {"PASS": "✅ PASS", "WARN": "⚠️ WARN", "FAIL": "❌ FAIL"}.get(report.health_status, report.health_status)
+    lines.append(f"**데이터 헬스: {badge}**" +
+                 (" — " + "; ".join(report.health_warnings) if report.health_warnings else ""))
     lines.append("")
     lines.append(f"**오늘 결정**: BUY {report.n_buy} · REJECT {report.n_reject} · SKIP {report.n_skip} · "
                  f"RiskGate veto {report.riskgate_vetoes} · 원장 누적 {report.ledger_total} · real_orders 0")

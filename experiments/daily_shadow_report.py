@@ -37,7 +37,9 @@ from agents.daily_shadow import (  # noqa: E402
     upsert_outcome_ledger,
 )
 from agents.decision_outcome import score_records, summarize_buys  # noqa: E402
+from agents.shadow_health import FAIL as HEALTH_FAIL  # noqa: E402
 from agents.trade_diagnostics import compute_trade_diagnostics  # noqa: E402
+from experiments.shadow_health_check import run_shadow_health  # noqa: E402
 from experiments.signal_decision_log import build_decision_records  # noqa: E402
 
 # 잠긴 현실 베이스라인(변경 금지) — leg 재구성용.
@@ -86,7 +88,7 @@ def run_daily_shadow(*, data_root, benchmark="SPY", date=None, events_csv="data/
                      assume_no_events=False, starting_cash=1000.0,
                      decision_ledger="reports/signal_decision_log.jsonl",
                      outcome_ledger="reports/decision_outcome_score.jsonl",
-                     daily_md="reports/daily_shadow_report.md",
+                     daily_md="reports/daily_shadow_report.md", health_stale_days=5,
                      simulate_fn=None, decision_builder=None):
     """일간 워크플로를 멱등하게 실행한다. (report, stats, error)."""
     settings = dict(data_root=data_root, benchmark=benchmark,
@@ -95,6 +97,16 @@ def run_daily_shadow(*, data_root, benchmark="SPY", date=None, events_csv="data/
     rep_date, today_records, err = build(settings=settings, end=date, simulate_fn=simulate_fn)
     if err is not None:
         return None, None, err
+
+    # 데이터 헬스 가드: FAIL이면 리포트 생성 차단(데이터 사용 불가). WARN/PASS는 진행 + 상단 표기.
+    health, _herr = run_shadow_health(
+        data_root=data_root, date=(date or rep_date), stale_days=health_stale_days,
+        decision_ledger=decision_ledger, outcome_ledger=outcome_ledger,
+    )
+    health_status = health.status if health is not None else "PASS"
+    health_warnings = tuple(f.message for f in health.findings) if health is not None else ()
+    if health_status == HEALTH_FAIL:
+        return None, None, f"헬스 FAIL — 리포트 생성 차단: {'; '.join(health_warnings)}"
 
     fn = simulate_fn or run_sim.simulate
     try:
@@ -118,7 +130,8 @@ def run_daily_shadow(*, data_root, benchmark="SPY", date=None, events_csv="data/
     _write_jsonl(outcome_ledger, upsert_outcome_ledger(existing_out, new_out))
 
     buy_summary = summarize_buys(scored)
-    report = build_daily_shadow(rep_date, today_records, scored, existing_by_id, buy_summary=buy_summary)
+    report = build_daily_shadow(rep_date, today_records, scored, existing_by_id, buy_summary=buy_summary,
+                                health_status=health_status, health_warnings=health_warnings)
 
     text = format_daily_shadow_markdown(report)
     if daily_md:
