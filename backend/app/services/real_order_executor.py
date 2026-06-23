@@ -130,6 +130,10 @@ def evaluate_readiness(
         reasons.append(f"manual arm {arm_state(arm, now=now)}")
     if arm is not None and arm.allowed_symbol and arm.allowed_symbol != intent.symbol:
         reasons.append(f"arm allowed_symbol 불일치: {arm.allowed_symbol} != {intent.symbol}")
+    # 출처 게이트: 전략/라이브스캔 생성 intent(strategy_id == live_strategy_id)만 실주문 가능.
+    # 테스트성 intent는 기본 차단 — 첫 주문 수동 테스트 모드를 명시적으로 켤 때만 예외(arm TTL이 기한 제한).
+    if intent.strategy_id != settings.live_strategy_id and not settings.first_order_manual_test_mode:
+        reasons.append("test-only intent (전략/라이브스캔 생성 아님) — 실주문 차단")
     # intent 상태/종류
     if intent.execution_gate_status != "accepted_dry_run":
         reasons.append(f"intent not accepted_dry_run: {intent.execution_gate_status}")
@@ -284,8 +288,15 @@ def executed_keys(*, reports_dir: Path | None = None) -> set[str]:
 
 
 def daily_real_order_count(*, reports_dir: Path | None = None, now: datetime | None = None) -> int:
-    """오늘 실제 제출된 실주문 수. scaffold에선 실 제출이 없으므로 항상 0."""
-    return 0
+    """오늘(UTC) 실제 제출된(REAL_SUBMITTED) 실주문 수. MAX_REAL_ORDERS_PER_DAY 게이트의 입력."""
+    today = (now or _now()).date().isoformat()
+    count = 0
+    for r in load_execution_receipts(limit=500, reports_dir=reports_dir):
+        if r.decision != "REAL_SUBMITTED":
+            continue
+        if (r.timestamp or "")[:10] == today:
+            count += 1
+    return count
 
 
 def build_receipt(

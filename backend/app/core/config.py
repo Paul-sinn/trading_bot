@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     require_fresh_broker_snapshot_for_real_order: bool = True  # stale 스냅샷이면 차단.
     require_market_hours_for_real_order: bool = True  # 장시간 외 차단.
     agentic_account_only: bool = True  # agentic_allowed 계정만(스냅샷 계정 미상이면 차단).
+    # 실주문은 전략/라이브스캔 생성 intent(strategy_id == live_strategy_id)에서만 나가야 한다.
+    # 테스트성 intent로 실주문 내는 것을 기본 차단. 첫 주문 수동 테스트는 이 플래그를 명시적으로 켤 때만
+    # 허용되며, 유효 기간은 수동 arm 파일의 짧은 TTL이 사실상 제한한다(arm 만료 시 자동 차단).
+    first_order_manual_test_mode: bool = False
 
     # Discord 알림(매매 이벤트 → webhook). 시크릿 URL은 .env에서만. 없으면 자동 비활성(no-op).
     # 카테고리별 토글로 노이즈 조절 가능(기본 전부 on). 알림은 메시지만 보내며 주문을 내지 않는다.

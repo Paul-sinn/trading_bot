@@ -21,8 +21,11 @@ import backend.app.services.real_order_executor as rex
 from backend.app.services.real_order_executor import (
     MockOrderExecutor,
     RealExecutionDisabled,
+    RealExecutionReceipt,
     RealRobinhoodOrderExecutor,
+    append_execution_receipt,
     build_receipt,
+    daily_real_order_count,
     evaluate_readiness,
     process_execution,
 )
@@ -42,8 +45,9 @@ def _intent(symbol="AAPL", notional=10.0, side="BUY", order_type="limit", key="s
 
 
 def _enabled() -> Settings:
-    # 실행을 허용하는 설정(소액 cap). 그래도 실 제출 경로는 없음.
-    return Settings(enable_real_order_execution=True, max_notional_per_real_order_usd=25.0, max_real_orders_per_day=1)
+    # 실행을 허용하는 설정(소액 cap). 수동 테스트 intent 허용(first_order_manual_test_mode). 실 제출 경로는 없음.
+    return Settings(enable_real_order_execution=True, max_notional_per_real_order_usd=25.0,
+                    max_real_orders_per_day=1, first_order_manual_test_mode=True)
 
 
 def _good_arm() -> RealOrderArm:
@@ -157,6 +161,29 @@ def test_idempotency_blocks():
     assert not r.ready and any("idempotency" in x for x in r.block_reasons)
 
 
+# --- 출처 게이트: 테스트성 intent는 기본 차단, 전략 intent는 허용 ---
+def test_test_only_intent_blocked_by_default():
+    # manual-test 모드 off + strategy_id != live_strategy_id → 차단
+    s = Settings(enable_real_order_execution=True, max_notional_per_real_order_usd=25.0,
+                 max_real_orders_per_day=1, first_order_manual_test_mode=False)
+    r = _ready(_intent(), s, _good_arm(), _fresh_snap())  # _intent strategy_id="strat"
+    assert not r.ready and any("test-only intent" in x for x in r.block_reasons)
+
+
+def test_strategy_intent_allowed_by_default():
+    s = Settings(enable_real_order_execution=True, max_notional_per_real_order_usd=25.0,
+                 max_real_orders_per_day=1, first_order_manual_test_mode=False)
+    strat_intent = _intent()
+    strat_intent = strat_intent.model_copy(update={"strategy_id": s.live_strategy_id})
+    r = _ready(strat_intent, s, _good_arm(), _fresh_snap())
+    assert r.ready and not any("test-only" in x for x in r.block_reasons)
+
+
+def test_manual_test_mode_allows_test_intent():
+    r = _ready(_intent(), _enabled(), _good_arm(), _fresh_snap())  # _enabled has manual_test=True
+    assert r.ready
+
+
 # --- 통과 경로 ---
 def test_all_pass_real_ready_dry_run_no_submission():
     r = _ready(_intent(), _enabled(), _good_arm(), _fresh_snap())
@@ -185,6 +212,36 @@ def test_receipt_invariants_forced():
 
 
 # --- process_execution 저장 + 멱등(MOCK 제출 후 재실행 시 idempotency 차단) ---
+def _submitted_receipt(symbol="F", ts=None) -> RealExecutionReceipt:
+    return RealExecutionReceipt(
+        intent_id="x", idempotency_key="x", symbol=symbol, side="BUY", decision="REAL_SUBMITTED",
+        limit_price=14.08, notional=14.03, quantity=1.0, environment="production",
+        market_hours_source="real", is_proof_run=False, broker_order_id="RH-1",
+        real_order_placed=True, real_orders_placed=1,
+        timestamp=(ts or NOW).isoformat(),
+    )
+
+
+def test_daily_count_counts_today_real_submitted(tmp_path):
+    assert daily_real_order_count(reports_dir=tmp_path, now=NOW) == 0
+    append_execution_receipt(_submitted_receipt(), reports_dir=tmp_path)
+    assert daily_real_order_count(reports_dir=tmp_path, now=NOW) == 1
+    # 어제 제출 건은 오늘 카운트에 포함 안 됨
+    from datetime import timedelta
+    append_execution_receipt(_submitted_receipt(ts=NOW - timedelta(days=1)), reports_dir=tmp_path)
+    assert daily_real_order_count(reports_dir=tmp_path, now=NOW) == 1
+
+
+def test_second_order_today_blocked_by_daily_cap(tmp_path):
+    from backend.app.services.broker_snapshot import append_snapshot as _append
+    _append(_fresh_snap(), reports_dir=tmp_path)
+    write_arm(_good_arm(), reports_dir=tmp_path)
+    append_execution_receipt(_submitted_receipt(), reports_dir=tmp_path)  # 오늘 이미 1건
+    r = process_execution(_intent(key="second"), settings=_enabled(), reports_dir=tmp_path, now=NOW, market_open=True)
+    assert r.decision == "REAL_BLOCKED"
+    assert any("MAX_REAL_ORDERS_PER_DAY" in x for x in r.block_reasons)
+
+
 def test_process_execution_persists_and_blocks_default(tmp_path):
     append_snapshot(_fresh_snap(), reports_dir=tmp_path)
     write_arm(_good_arm(), reports_dir=tmp_path)
