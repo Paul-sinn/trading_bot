@@ -516,6 +516,22 @@ export interface ExitDecision {
   real_orders_placed: number;
 }
 
+/** backend: services/real_sell_executor.py SellExecutionStatus. 매도 scaffold — 기본 비활성, real_sell_orders_placed=0. */
+export interface SellExecutionStatus {
+  allow_real_sell_orders: boolean;
+  sell_arm_status: string; // missing | disarmed | expired | armed
+  sell_arm_expires_at: string | null;
+  sellable_positions: {
+    symbol: string;
+    quantity: number | null;
+    shares_available_for_sells: number | null;
+  }[];
+  latest_decision: string | null;
+  latest_block_reason: string | null;
+  latest_environment: string | null;
+  real_sell_orders_placed: number;
+}
+
 /** backend: services/live_records.py LiveWeeklyRecord. */
 export interface LiveWeeklyRecord {
   week_start: string;

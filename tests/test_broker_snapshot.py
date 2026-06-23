@@ -62,7 +62,9 @@ def test_build_snapshot_masks_account_and_maps_fields():
     assert snap.total_value == 1000.0
     assert snap.cash == 1000.0
     assert snap.buying_power == 1000.0
-    assert snap.positions == [{"symbol": "SPCX", "quantity": 2.0, "average_buy_price": 150.5}]
+    assert snap.positions == [
+        {"symbol": "SPCX", "quantity": 2.0, "average_buy_price": 150.5, "shares_available_for_sells": None}
+    ]
     assert snap.open_orders == [
         {"symbol": "NVDA", "side": "buy", "state": "new", "quantity": 1.0}
     ]

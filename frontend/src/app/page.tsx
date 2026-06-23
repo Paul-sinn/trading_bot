@@ -9,6 +9,7 @@ import { LiveTicker } from "@/components/dashboard/LiveTicker";
 import { OrderReceiptsPanel } from "@/components/dashboard/OrderReceipts";
 import { ExecutionReadinessPanel } from "@/components/dashboard/ExecutionReadiness";
 import { PositionExitManagerPanel } from "@/components/dashboard/PositionExitManager";
+import { SellExecutionReadinessPanel } from "@/components/dashboard/SellExecutionReadiness";
 import {
   getBrokerSnapshot,
   getCandidates,
@@ -20,6 +21,7 @@ import {
   getPortfolio,
   getPositions,
   getScanEvents,
+  getSellExecutionStatus,
 } from "@/lib/api";
 import { mockLiveStatus, mockPortfolio, mockTrades } from "@/lib/mock";
 import { formatUsd, pnlColorClass } from "@/lib/utils";
@@ -49,6 +51,7 @@ export default async function DashboardPage() {
   const brokerSnapshot = await getBrokerSnapshot(); // null이면 패널이 "없음" 경고 표시
   const orderReceipts = (await getOrderReceipts(50)) ?? [];
   const executionStatus = await getExecutionStatus(); // null이면 패널이 비활성으로 표시
+  const sellExecutionStatus = await getSellExecutionStatus();
   const positions = (await getPositions()) ?? [];
   const exits = (await getExits(50)) ?? [];
   const wr = winRate();
@@ -115,6 +118,9 @@ export default async function DashboardPage() {
 
       {/* 실주문 실행 준비(scaffold) — 기본 비활성, 실주문 경로 없음 */}
       <ExecutionReadinessPanel status={executionStatus} />
+
+      {/* 수동 매도 실행 준비(scaffold) — 기본 비활성, 매도 경로 없음 */}
+      <SellExecutionReadinessPanel status={sellExecutionStatus} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* 실시간 리스크% 게이지 */}

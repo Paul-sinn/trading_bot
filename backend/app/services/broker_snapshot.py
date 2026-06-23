@@ -170,6 +170,7 @@ def build_snapshot_from_raw(
             "symbol": p.get("symbol"),
             "quantity": _as_float(p.get("quantity")),
             "average_buy_price": _as_float(p.get("average_buy_price")),
+            "shares_available_for_sells": _as_float(p.get("shares_available_for_sells")),
         }
         for p in (_data(raw.get("positions")).get("positions") or [])
         if isinstance(p, dict)

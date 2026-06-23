@@ -36,6 +36,7 @@ from backend.app.services.order_receipt import (
     load_receipts,
 )
 from backend.app.services.real_order_executor import ExecutionStatus, execution_status
+from backend.app.services.real_sell_executor import SellExecutionStatus, sell_execution_status
 
 router = APIRouter()
 
@@ -129,3 +130,9 @@ async def live_order_receipt_latest() -> OrderReceipt | None:
 async def live_execution_status() -> ExecutionStatus:
     """실주문 실행 준비 상태(읽기 전용 — scaffold). 기본 비활성, 실주문 경로 없음."""
     return execution_status()
+
+
+@router.get("/api/live/sell-execution-status", response_model=SellExecutionStatus)
+async def live_sell_execution_status() -> SellExecutionStatus:
+    """수동 매도 실행 준비 상태(읽기 전용 — scaffold). 기본 비활성, 매도 경로 없음."""
+    return sell_execution_status()

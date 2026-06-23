@@ -19,6 +19,7 @@ import type {
   OrderReceipt,
   MarketDirection,
   Portfolio,
+  SellExecutionStatus,
   ShadowReportView,
   ShadowRunResult,
   TradingMode,
@@ -194,6 +195,11 @@ export function getOrderReceipts(limit = 50): Promise<OrderReceipt[] | null> {
 /** 실주문 실행 준비 상태(읽기 전용 — scaffold, 기본 비활성, 주문 없음). 실패 시 null. */
 export function getExecutionStatus(): Promise<ExecutionStatus | null> {
   return apiFetch<ExecutionStatus>("/api/live/execution-status");
+}
+
+/** 수동 매도 실행 준비 상태(읽기 전용 — scaffold, 기본 비활성, 매도 없음). 실패 시 null. */
+export function getSellExecutionStatus(): Promise<SellExecutionStatus | null> {
+  return apiFetch<SellExecutionStatus>("/api/live/sell-execution-status");
 }
 
 // --- 포지션 / 청산 매니저(read-only, dry-run) ---
