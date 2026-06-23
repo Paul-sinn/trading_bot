@@ -253,6 +253,12 @@ def append_exit_decision(decision: ExitDecision, *, reports_dir: Path | None = N
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(decision.model_dump(), ensure_ascii=False) + "\n")
+    try:  # 알림 실패가 기록을 죽이지 않게 흡수. URL 없으면 no-op. HOLD는 notifier가 건너뜀.
+        from backend.app.services.discord_notifier import notify_exit
+
+        notify_exit(decision, reports_dir=reports_dir)
+    except Exception:  # noqa: BLE001
+        pass
     return decision
 
 

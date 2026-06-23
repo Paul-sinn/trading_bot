@@ -34,7 +34,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_REPORTS_DIR = _REPO_ROOT / "reports"
 EXECUTION_RECEIPTS_LOG = "real_execution_receipts.jsonl"
 
-ExecutionDecision = Literal["REAL_BLOCKED", "REAL_READY_DRY_RUN", "MOCK_SUBMITTED"]
+ExecutionDecision = Literal["REAL_BLOCKED", "REAL_READY_DRY_RUN", "MOCK_SUBMITTED", "REAL_SUBMITTED"]
 RECEIPT_MODE = "real_execution_scaffold"
 
 
@@ -203,10 +203,12 @@ class RealExecutionReceipt(BaseModel):
     real_orders_placed: int = 0
 
     def model_post_init(self, _context) -> None:
-        # 불변식 강제(이 task): 실주문 흔적 0. broker_order_id는 MOCK 제출 시에만 가짜값 허용.
-        object.__setattr__(self, "real_order_placed", False)
-        object.__setattr__(self, "real_orders_placed", 0)
+        # mode는 항상 고정. 실주문 흔적(real_order_placed/real_orders_placed)은 REAL_SUBMITTED(실제
+        # 제출된 경우)에만 제공값을 보존하고, 그 외 모든 경로(BLOCKED/READY/MOCK)는 강제로 0으로 박는다.
         object.__setattr__(self, "mode", RECEIPT_MODE)
+        if self.decision != "REAL_SUBMITTED":
+            object.__setattr__(self, "real_order_placed", False)
+            object.__setattr__(self, "real_orders_placed", 0)
 
 
 def _path(reports_dir: Path | None) -> Path:
@@ -218,6 +220,12 @@ def append_execution_receipt(receipt: RealExecutionReceipt, *, reports_dir: Path
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(receipt.model_dump(), ensure_ascii=False) + "\n")
+    try:  # 알림 실패가 기록/실행을 죽이지 않게 흡수. URL 없으면 no-op.
+        from backend.app.services.discord_notifier import notify_real_execution
+
+        notify_real_execution(receipt, reports_dir=reports_dir)
+    except Exception:  # noqa: BLE001
+        pass
     return receipt
 
 

@@ -59,6 +59,14 @@ class Settings(BaseSettings):
     require_market_hours_for_real_order: bool = True  # 장시간 외 차단.
     agentic_account_only: bool = True  # agentic_allowed 계정만(스냅샷 계정 미상이면 차단).
 
+    # Discord 알림(매매 이벤트 → webhook). 시크릿 URL은 .env에서만. 없으면 자동 비활성(no-op).
+    # 카테고리별 토글로 노이즈 조절 가능(기본 전부 on). 알림은 메시지만 보내며 주문을 내지 않는다.
+    discord_webhook_url: str | None = None
+    discord_notify_real_orders: bool = True   # REAL_SUBMITTED / REAL_READY_DRY_RUN
+    discord_notify_exits: bool = True         # 청산 신호(STOP_LOSS/TRAILING/TIME/MANUAL_CLOSE)
+    discord_notify_dry_run_intents: bool = True  # WOULD_SUBMIT dry-run 주문계획
+    discord_notify_blocks: bool = True        # REAL_BLOCKED / BLOCKED / ERROR
+
     claude_api_key: str | None = None
     database_url: str = "sqlite:///./trading_bot.db"
     redis_url: str = "redis://localhost:6379/0"

@@ -84,11 +84,17 @@ def _path(reports_dir: Path | None) -> Path:
 
 
 def append_receipt(receipt: OrderReceipt, *, reports_dir: Path | None = None) -> OrderReceipt:
-    """영수증 1건을 append한다(주문 아님 — 파일 쓰기만)."""
+    """영수증 1건을 append한다(주문 아님 — 파일 쓰기만). 기록 후 Discord 알림(있으면)."""
     path = _path(reports_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(receipt.model_dump(), ensure_ascii=False) + "\n")
+    try:  # 알림 실패가 기록/매매를 죽이지 않게 흡수. URL 없으면 no-op.
+        from backend.app.services.discord_notifier import notify_order_receipt
+
+        notify_order_receipt(receipt, reports_dir=reports_dir)
+    except Exception:  # noqa: BLE001
+        pass
     return receipt
 
 
