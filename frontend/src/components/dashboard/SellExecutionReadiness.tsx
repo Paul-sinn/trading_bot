@@ -1,6 +1,7 @@
-// 수동 매도 실행 준비 패널 — scaffold 전용(실 매도 없음).
-// CRITICAL: 매도 실행은 기본 비활성이며 현재 단계엔 실 Robinhood 매도 경로가 결선돼 있지 않다.
-// 읽기 전용 상태(활성/arm/매도가능 포지션/최근 판정·차단사유)만 표시한다.
+// 수동 매도 실행 준비 패널 — 확인 게이트 결선(자동 매도 없음).
+// CRITICAL: 실 매도 제출 경로는 결선돼 있으나 수동 arm + 정확한 확인 문구(CONFIRM_REAL_SELL_1)가
+// 있어야만 시도되며, 실 executor는 항상 disabled라 프로덕션 제출은 불가하다(fail-closed).
+// 읽기 전용 상태(활성/제출 결선/확인 필요/arm/매도가능 포지션/최근 판정·차단사유)만 표시한다.
 import { Card } from "@/components/ui/Card";
 import type { SellExecutionStatus } from "@/types";
 
@@ -19,6 +20,8 @@ export function SellExecutionReadinessPanel({
 }) {
   const enabled = status?.allow_real_sell_orders ?? false;
   const positions = status?.sellable_positions ?? [];
+  const wiring = status?.sell_submit_wiring ?? false;
+  const confirmRequired = status?.confirmation_required ?? true;
 
   return (
     <Card className="space-y-3">
@@ -32,12 +35,18 @@ export function SellExecutionReadinessPanel({
       </div>
 
       <div className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs text-amber-400">
-        Manual sell execution is scaffold only — no Robinhood sell order
-        submitted.
+        Real sell requires manual arm and CONFIRM_REAL_SELL_1. No automatic
+        sell.
       </div>
 
       <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
         <Item label="매도 실행 활성" value={enabled ? "true" : "false"} tone={enabled ? "warn" : "muted"} />
+        <Item label="제출 경로 결선" value={wiring ? "present" : "—"} tone="muted" />
+        <Item
+          label="확인 문구 필요"
+          value={confirmRequired ? (status?.confirmation_phrase ?? "CONFIRM_REAL_SELL_1") : "—"}
+          mono
+        />
         <Item
           label="수동 매도 arm"
           value={ARM_LABEL[status?.sell_arm_status ?? "missing"] ?? "없음"}

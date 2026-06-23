@@ -66,3 +66,22 @@
 - [ ] **사용자 명시적 승인** 획득(첫 실주문 한정).
 - [ ] 실 MCP write 결선 PR은 별도 리뷰 + 이 체크리스트 재확인.
 - 현재까지: `real_orders_placed=0`, `real_order_placed=false`, `broker_order_id=null` 유지.
+
+## 9. 실 매도 제출 결선 v1 (confirm-gated, 기본 비활성)
+`backend/app/services/real_sell_executor.py`. 매수와 동형의 게이트 체인에 **확인 문구 게이트**를 추가하고
+미래 실 매도 경로를 결선한다. 단, 실 executor(`RealRobinhoodSellExecutor`)는 **항상 disabled**라
+프로덕션 제출은 fail-closed(SELL_BLOCKED). 테스트만 `MockSellExecutor`로 `SELL_SUBMITTED`(environment=test).
+
+- **인터페이스**: `submit_limit_sell(symbol, quantity, limit_price, account_id=None)`.
+- **실 제출 요건(전부 충족 시에만 executor 호출)**: `ALLOW_REAL_SELL_ORDERS=true` · 유효 `real_sell_arm.json`
+  (armed·미만료·allowed_symbol·max_quantity·min_limit_price) · fresh broker snapshot · 포지션 존재 ·
+  `quantity ≤ shares_available_for_sells` · **지정가 매도만** · equity만(옵션 금지) · 정규장만 ·
+  중복 미체결 매도 없음 · 멱등 미사용 · control_flags 허용 · **정확한 확인 문구 `CONFIRM_REAL_SELL_1`**.
+- **확인 계약(`build_sell_preview`)**: 실 제출 직전 SYMBOL·SIDE=SELL·TYPE=LIMIT·QUANTITY·LIMIT_PRICE·
+  ESTIMATED_NOTIONAL·ACCOUNT(Agentic, masked last4)·CURRENT_POSITION_QTY·SHARES_AVAILABLE_FOR_SELLS·
+  MARKET_HOURS=regular only 프리뷰를 출력하고 **멈춘다**. 정확한 문구가 있어야만 제출 경로 호출.
+- **영수증 분리**: 실 매도 흔적(`real_sell_order_placed=true`,`real_sell_orders_placed=1`)은
+  **environment=production·real 시장시간·non-proof `SELL_SUBMITTED`**에만 보존. mock/test/proof는
+  `SELL_SUBMITTED`라도 0/false 강제. `latest_production_sell_receipt`는 mocked proof를 무시.
+- **금지**: 실 MCP write 호출(`mcp__robinhood…`)·매수·취소·review·옵션·공매도·live_auto.
+- 현재까지: 프로덕션 `real_sell_orders_placed=0`, `real_sell_order_placed=false`, `broker_order_id=null` 유지.

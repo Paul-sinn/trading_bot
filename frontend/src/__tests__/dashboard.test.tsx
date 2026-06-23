@@ -132,12 +132,12 @@ describe("① 대시보드 페이지", () => {
     ).toBeInTheDocument();
   });
 
-  it("수동 매도 실행 준비 패널(scaffold 라벨)을 렌더한다", async () => {
+  it("수동 매도 실행 준비 패널(확인 게이트 라벨)을 렌더한다", async () => {
     render(await DashboardPage());
     expect(screen.getByText("수동 매도 실행 준비")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Manual sell execution is scaffold only — no Robinhood sell order submitted.",
+        "Real sell requires manual arm and CONFIRM_REAL_SELL_1. No automatic sell.",
       ),
     ).toBeInTheDocument();
   });

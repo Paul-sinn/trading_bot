@@ -516,9 +516,12 @@ export interface ExitDecision {
   real_orders_placed: number;
 }
 
-/** backend: services/real_sell_executor.py SellExecutionStatus. 매도 scaffold — 기본 비활성, real_sell_orders_placed=0. */
+/** backend: services/real_sell_executor.py SellExecutionStatus. 매도 확인 게이트 결선 — 무장+CONFIRM_REAL_SELL_1 없으면 비활성, real_sell_orders_placed=0. */
 export interface SellExecutionStatus {
   allow_real_sell_orders: boolean;
+  sell_submit_wiring: boolean; // 제출 경로 결선(실 executor는 항상 disabled)
+  confirmation_required: boolean;
+  confirmation_phrase: string; // CONFIRM_REAL_SELL_1
   sell_arm_status: string; // missing | disarmed | expired | armed
   sell_arm_expires_at: string | null;
   sellable_positions: {
