@@ -71,7 +71,19 @@ def main() -> int:
         except Exception:  # noqa: BLE001 - 회신 실패가 워커를 죽이지 않게
             pass
 
-    client.run(token)  # 토큰은 라이브러리 내부로만 전달 — 로그 미노출
+    try:
+        client.run(token, log_handler=None)  # 토큰은 라이브러리 내부로만 전달 — 로그 미노출
+    except discord.PrivilegedIntentsRequired:
+        print(
+            "[approval-worker] MESSAGE CONTENT INTENT 미활성 — Discord 개발자 포털에서 켜야 합니다.\n"
+            "  https://discord.com/developers/applications → 해당 앱 → Bot →\n"
+            "  Privileged Gateway Intents → 'MESSAGE CONTENT INTENT' 토글 ON 후 다시 실행.\n"
+            "  (관리자 권한과 별개의 설정입니다. 봇이 !approve/!reject 텍스트를 읽으려면 필수.)"
+        )
+        return 4
+    except discord.LoginFailure:
+        print("[approval-worker] 로그인 실패 — DISCORD_BOT_TOKEN이 유효한지 .env를 확인하세요. (토큰 미출력)")
+        return 5
     return 0
 
 

@@ -10,6 +10,9 @@ sqlalchemy
 redis
 httpx
 
+# Discord 승인 봇 워커 (scripts/discord_approval_worker.py) — Robinhood 미연결, 승인 결정만 기록
+discord.py
+
 # Algorithms (지표는 pandas/numpy로 직접 계산)
 pandas
 numpy
