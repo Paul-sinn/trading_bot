@@ -516,6 +516,30 @@ export interface ExitDecision {
   real_orders_placed: number;
 }
 
+/** backend: services/approval_store.py ApprovalView. Discord 승인 요청 + 실효 상태(읽기 전용 — broker_order_id 없음). */
+export interface ApprovalView {
+  approval_id: string;
+  created_at: string;
+  expires_at: string;
+  type: "BUY" | "SELL";
+  symbol: string;
+  side: string;
+  order_type: string;
+  quantity: number | null;
+  dollar_amount: number | null;
+  limit_price: number | null;
+  notional: number | null;
+  account_last4: string | null;
+  strategy_id: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED" | "CANCELLED";
+  expired: boolean;
+  reason: string;
+  approve_command: string;
+  reject_command: string;
+  decided_by: string | null;
+  decision: string | null;
+}
+
 /** backend: services/real_sell_executor.py SellExecutionStatus. 매도 확인 게이트 결선 — 무장+CONFIRM_REAL_SELL_1 없으면 비활성, real_sell_orders_placed=0. */
 export interface SellExecutionStatus {
   allow_real_sell_orders: boolean;

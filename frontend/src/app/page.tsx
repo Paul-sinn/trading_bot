@@ -4,6 +4,7 @@
 import { Card } from "@/components/ui/Card";
 import { Gauge } from "@/components/ui/Gauge";
 import { BrokerSnapshotPanel } from "@/components/dashboard/BrokerSnapshot";
+import { DiscordApprovalPanel } from "@/components/dashboard/DiscordApproval";
 import { LiveControls } from "@/components/dashboard/LiveControls";
 import { LiveTicker } from "@/components/dashboard/LiveTicker";
 import { OrderReceiptsPanel } from "@/components/dashboard/OrderReceipts";
@@ -11,10 +12,12 @@ import { ExecutionReadinessPanel } from "@/components/dashboard/ExecutionReadine
 import { PositionExitManagerPanel } from "@/components/dashboard/PositionExitManager";
 import { SellExecutionReadinessPanel } from "@/components/dashboard/SellExecutionReadiness";
 import {
+  getApprovals,
   getBrokerSnapshot,
   getCandidates,
   getExecutionStatus,
   getExits,
+  getLatestApproval,
   getLiveStatus,
   getOrderIntents,
   getOrderReceipts,
@@ -52,6 +55,8 @@ export default async function DashboardPage() {
   const orderReceipts = (await getOrderReceipts(50)) ?? [];
   const executionStatus = await getExecutionStatus(); // null이면 패널이 비활성으로 표시
   const sellExecutionStatus = await getSellExecutionStatus();
+  const approvals = (await getApprovals(50)) ?? [];
+  const latestApproval = await getLatestApproval();
   const positions = (await getPositions()) ?? [];
   const exits = (await getExits(50)) ?? [];
   const wr = winRate();
@@ -121,6 +126,9 @@ export default async function DashboardPage() {
 
       {/* 수동 매도 실행 준비(scaffold) — 기본 비활성, 매도 경로 없음 */}
       <SellExecutionReadinessPanel status={sellExecutionStatus} />
+
+      {/* Discord 승인 게이트 — 실주문 전 사람 승인 필수(리스크 게이트 우회 아님) */}
+      <DiscordApprovalPanel approvals={approvals} latest={latestApproval} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* 실시간 리스크% 게이지 */}

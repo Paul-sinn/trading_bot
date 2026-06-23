@@ -46,8 +46,10 @@ def _intent(symbol="AAPL", notional=10.0, side="BUY", order_type="limit", key="s
 
 def _enabled() -> Settings:
     # 실행을 허용하는 설정(소액 cap). 수동 테스트 intent 허용(first_order_manual_test_mode). 실 제출 경로는 없음.
+    # 이 단위 테스트들은 승인 게이트 이전 readiness 동작을 검증하므로 Discord 승인 요구는 끈다(별도 승인 테스트가 검증).
     return Settings(enable_real_order_execution=True, max_notional_per_real_order_usd=25.0,
-                    max_real_orders_per_day=1, first_order_manual_test_mode=True)
+                    max_real_orders_per_day=1, first_order_manual_test_mode=True,
+                    require_discord_approval_for_real_order=False)
 
 
 def _good_arm() -> RealOrderArm:
@@ -277,7 +279,7 @@ def test_api_execution_status_default_disabled(reports):
     body = client.get("/api/live/execution-status").json()
     assert body["real_execution_enabled"] is False
     assert body["arm_status"] == "missing"
-    assert body["max_notional_per_real_order_usd"] == 25.0
+    assert body["max_notional_per_real_order_usd"] == 100.0
     assert body["real_orders_today"] == 0
     assert body["real_orders_placed"] == 0
 
@@ -287,13 +289,17 @@ def test_v1_hard_limits_default_safe():
     s = Settings()
     assert s.enable_real_order_execution is False
     assert s.require_manual_arm is True
-    assert s.max_notional_per_real_order_usd == 25.0
+    assert s.max_notional_per_real_order_usd == 100.0  # 감독 거래 상한 $100
     assert s.max_real_orders_per_day == 1
     assert s.allow_real_sell_orders is False
     assert s.allow_options_trading is False
     assert s.require_market_hours_for_real_order is True
     assert s.require_fresh_broker_snapshot_for_real_order is True
     assert s.agentic_account_only is True
+    # 감독 거래 추가 하드리밋(기본 안전).
+    assert s.require_discord_approval_for_real_order is True
+    assert s.strategy_intent_only_for_real_order is True
+    assert s.test_only_intent_real_order_allowed is False
 
 
 def test_agentic_account_only_blocks_unknown_account():

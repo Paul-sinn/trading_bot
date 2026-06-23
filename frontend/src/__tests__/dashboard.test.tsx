@@ -17,6 +17,8 @@ const getExecutionStatus = vi.fn().mockResolvedValue(null);
 const getPositions = vi.fn().mockResolvedValue([]);
 const getExits = vi.fn().mockResolvedValue([]);
 const getSellExecutionStatus = vi.fn().mockResolvedValue(null);
+const getApprovals = vi.fn().mockResolvedValue([]);
+const getLatestApproval = vi.fn().mockResolvedValue(null);
 vi.mock("@/lib/api", () => ({
   getPortfolio: vi.fn().mockResolvedValue(mockPortfolio),
   getLiveStatus: vi.fn().mockResolvedValue(mockLiveStatus),
@@ -30,6 +32,8 @@ vi.mock("@/lib/api", () => ({
   getPositions: (...args: unknown[]) => getPositions(...args),
   getExits: (...args: unknown[]) => getExits(...args),
   getSellExecutionStatus: (...args: unknown[]) => getSellExecutionStatus(...args),
+  getApprovals: (...args: unknown[]) => getApprovals(...args),
+  getLatestApproval: (...args: unknown[]) => getLatestApproval(...args),
   startLive: (...args: unknown[]) => startLive(...args),
   stopLive: (...args: unknown[]) => stopLive(...args),
   emergencyHalt: (...args: unknown[]) => emergencyHalt(...args),
@@ -138,6 +142,16 @@ describe("① 대시보드 페이지", () => {
     expect(
       screen.getByText(
         "Real sell requires manual arm and CONFIRM_REAL_SELL_1. No automatic sell.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("Discord 승인 게이트 패널(승인 필수 라벨)을 렌더한다", async () => {
+    render(await DashboardPage());
+    expect(screen.getByText("Discord 승인 게이트")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Discord approval is required before any real order. Approval does not bypass risk gates.",
       ),
     ).toBeInTheDocument();
   });

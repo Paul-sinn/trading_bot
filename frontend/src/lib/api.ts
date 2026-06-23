@@ -2,6 +2,7 @@
 // backend(SSOT)만 호출한다 (CLAUDE.md CRITICAL / ADR-001).
 import type {
   AiStatus,
+  ApprovalView,
   BrokerPosition,
   BrokerSnapshot,
   ExecutionStatus,
@@ -200,6 +201,16 @@ export function getExecutionStatus(): Promise<ExecutionStatus | null> {
 /** 수동 매도 실행 준비 상태(읽기 전용 — scaffold, 기본 비활성, 매도 없음). 실패 시 null. */
 export function getSellExecutionStatus(): Promise<SellExecutionStatus | null> {
   return apiFetch<SellExecutionStatus>("/api/live/sell-execution-status");
+}
+
+/** Discord 승인 요청 목록 + 실효 상태(읽기 전용 — jsonl만, Discord/Robinhood 미호출). 실패 시 null. */
+export function getApprovals(limit = 50): Promise<ApprovalView[] | null> {
+  return apiFetch<ApprovalView[]>(`/api/live/approvals?limit=${limit}`);
+}
+
+/** 가장 최근 Discord 승인 요청 + 실효 상태(읽기 전용). 실패 시 null. */
+export function getLatestApproval(): Promise<ApprovalView | null> {
+  return apiFetch<ApprovalView>("/api/live/approvals/latest");
 }
 
 // --- 포지션 / 청산 매니저(read-only, dry-run) ---

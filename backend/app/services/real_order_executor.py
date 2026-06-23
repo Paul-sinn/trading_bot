@@ -378,16 +378,31 @@ def process_execution(
     settings = settings or Settings()
     arm = read_arm(reports_dir=reports_dir)
     snapshot = latest_snapshot(reports_dir=reports_dir)
+    daily = daily_real_order_count(reports_dir=reports_dir, now=now)
+    keys = executed_keys(reports_dir=reports_dir)
     readiness = evaluate_readiness(
         intent,
         settings=settings,
         arm=arm,
         snapshot=snapshot,
-        daily_real_count=daily_real_order_count(reports_dir=reports_dir, now=now),
-        executed_keys=executed_keys(reports_dir=reports_dir),
+        daily_real_count=daily,
+        executed_keys=keys,
         now=now,
         market_open=market_open,
     )
+    # Discord 승인 게이트(별개 전제조건 — 리스크 게이트를 우회하지 않는다). 미승인이면 차단 사유 병합.
+    if settings.require_discord_approval_for_real_order:
+        from backend.app.services.approval_gate import approval_gate_for_intent
+
+        gate = approval_gate_for_intent(
+            intent, type="BUY", settings=settings,
+            account_last4=snapshot.account_last4 if snapshot is not None else None,
+            reports_dir=reports_dir, now=now, daily_real_count=daily, executed_keys=keys,
+        )
+        if not gate.approved:
+            readiness = ExecutionReadiness(
+                ready=False, block_reasons=readiness.block_reasons + gate.block_reasons
+            )
     # market_open이 명시 주입되면 mocked(=test/proof), None이면 production heuristic(=real).
     market_hours_source: Literal["real", "mocked"] = "mocked" if market_open is not None else "real"
     receipt = build_receipt(

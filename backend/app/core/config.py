@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     enable_real_order_execution: bool = False  # 마스터 스위치(기본 OFF → 실행 차단).
     require_manual_arm: bool = True  # 실주문 전 수동 arm 파일 필수.
     real_order_arm_ttl_seconds: int = 120  # arm 유효시간(만료 시 차단).
-    max_notional_per_real_order_usd: float = 25.0  # 실주문 1건 최대 노셔널(소액 상한).
+    max_notional_per_real_order_usd: float = 100.0  # 실주문 1건 최대 노셔널(감독 거래 상한 $100).
     max_real_orders_per_day: int = 1  # 하루 실주문 최대 건수.
     allow_real_sell_orders: bool = False  # 매도 자동화 미허용(매수 limit만).
     allow_options_trading: bool = False  # 옵션 거래 미허용(주식만).
@@ -62,6 +62,19 @@ class Settings(BaseSettings):
     # 테스트성 intent로 실주문 내는 것을 기본 차단. 첫 주문 수동 테스트는 이 플래그를 명시적으로 켤 때만
     # 허용되며, 유효 기간은 수동 arm 파일의 짧은 TTL이 사실상 제한한다(arm 만료 시 자동 차단).
     first_order_manual_test_mode: bool = False
+    # 전략/라이브스캔 생성 intent만 실주문 허용(테스트성/수동 조작 intent 기본 차단).
+    strategy_intent_only_for_real_order: bool = True
+    # 테스트 전용 intent로 실주문 내는 것을 허용할지(기본 금지 — fail-closed).
+    test_only_intent_real_order_allowed: bool = False
+
+    # Discord 승인 게이트 — 실주문(매수/매도) 전 Discord에서 사람이 명시적으로 !approve 해야 한다.
+    # 승인은 리스크 게이트를 우회하지 않는다(승인 + 모든 게이트 + 확인까지 통과해야 제출 시도).
+    require_discord_approval_for_real_order: bool = True
+    approval_request_ttl_seconds: int = 300  # 승인 요청 유효시간(만료 시 승인 불가).
+    # Discord 봇 워커(승인 처리) 시크릿/설정 — .env에서만. 봇은 Robinhood를 절대 호출하지 않는다.
+    discord_bot_token: str | None = None
+    discord_approval_channel_id: str | None = None
+    discord_allowed_user_ids: str = ""  # 콤마 구분 허용 사용자 ID(이 목록만 승인/거부 가능).
 
     # Discord 알림(매매 이벤트 → webhook). 시크릿 URL은 .env에서만. 없으면 자동 비활성(no-op).
     # 카테고리별 토글로 노이즈 조절 가능(기본 전부 on). 알림은 메시지만 보내며 주문을 내지 않는다.

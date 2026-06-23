@@ -490,6 +490,19 @@ def process_sell_submit(
         intent, settings=settings, arm=arm, snapshot=snapshot,
         sold_keys=sold_keys(reports_dir=reports_dir), control_flags=flags, now=now, market_open=market_open,
     )
+    # Discord 승인 게이트(별개 전제조건 — 리스크 게이트를 우회하지 않는다). 미승인이면 차단 사유 병합.
+    if settings.require_discord_approval_for_real_order:
+        from backend.app.services.approval_gate import approval_gate_for_intent
+
+        gate = approval_gate_for_intent(
+            intent, type="SELL", settings=settings,
+            account_last4=snapshot.account_last4 if snapshot is not None else None,
+            reports_dir=reports_dir, now=now, executed_keys=sold_keys(reports_dir=reports_dir),
+        )
+        if not gate.approved:
+            readiness = SellReadiness(
+                ready=False, block_reasons=readiness.block_reasons + gate.block_reasons
+            )
     mhs: Literal["real", "mocked"] = "mocked" if market_open is not None else "real"
     receipt = build_sell_submit_receipt(
         intent, readiness, confirmation=confirmation, executor=executor, market_hours_source=mhs,

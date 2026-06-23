@@ -85,3 +85,42 @@
   `SELL_SUBMITTED`라도 0/false 강제. `latest_production_sell_receipt`는 mocked proof를 무시.
 - **금지**: 실 MCP write 호출(`mcp__robinhood…`)·매수·취소·review·옵션·공매도·live_auto.
 - 현재까지: 프로덕션 `real_sell_orders_placed=0`, `real_sell_order_placed=false`, `broker_order_id=null` 유지.
+
+## 10. Discord 승인 게이트 + 감독 거래 하드리밋
+실주문(매수/매도) 전 **Discord에서 사람이 명시적으로 승인**해야 한다. 승인은 리스크 게이트를
+**우회하지 않는다** — 승인 + 모든 readiness 게이트 + (매도) 확인 문구까지 통과해야 제출을 시도하고,
+실 executor는 여전히 fail-closed다(이 단계에서 실주문 0).
+
+### 하드리밋 기본값(감독 거래)
+`MAX_NOTIONAL_PER_REAL_ORDER_USD=100` · `MAX_REAL_ORDERS_PER_DAY=1` ·
+`REQUIRE_DISCORD_APPROVAL_FOR_REAL_ORDER=true` · `REQUIRE_MANUAL_ARM=true` · `AGENTIC_ACCOUNT_ONLY=true` ·
+`REQUIRE_FRESH_BROKER_SNAPSHOT_FOR_REAL_ORDER=true` · `REQUIRE_MARKET_HOURS_FOR_REAL_ORDER=true` ·
+`ALLOW_OPTIONS_TRADING=false` · `ALLOW_REAL_SELL_ORDERS=false`(매도는 §9 confirm scaffold) ·
+`STRATEGY_INTENT_ONLY_FOR_REAL_ORDER=true` · `TEST_ONLY_INTENT_REAL_ORDER_ALLOWED=false`.
+
+### 저장(append-only, gitignore)
+- `reports/approval_requests.jsonl` — READY 도달 시 생성. 필드: approval_id·created_at·expires_at·type(BUY/SELL)·
+  symbol·side·order_type·quantity/dollar_amount·limit_price·notional·account_last4·source_intent_id·
+  strategy_id·idempotency_key·preview_hash·status·reason·broker_order_id(=null).
+- `reports/approval_decisions.jsonl` — 봇 워커가 기록. 필드: approval_id·decided_at·decision(APPROVE/REJECT)·
+  discord_user_id·discord_username·channel_id·message_id·raw_command·valid·reason. **시크릿/전체 계좌번호/토큰 미포함.**
+
+### Discord 봇 워커 (`scripts/discord_approval_worker.py`)
+- env: `DISCORD_BOT_TOKEN`·`DISCORD_APPROVAL_CHANNEL_ID`·`DISCORD_ALLOWED_USER_IDS`(콤마 구분).
+- 명령: `!approve <approval_id>` · `!reject <approval_id>` · `!status <approval_id>`.
+- 규칙: 허용 사용자만 승인/거부(목록 밖/빈 목록은 fail-closed) · 만료 요청 승인 불가 · 중복 결정 거부 ·
+  알 수 없는 id 거부 · `!status`는 조회만(결정 미기록). **워커는 Robinhood를 호출하지 않고 주문을 내지 않는다 —
+  approval_decisions.jsonl만 쓴다.** 명령 로직은 `services/discord_approval.process_approval_command`(테스트 가능).
+
+### 실행 통합(`evaluate_approval_gate` / `approval_gate_for_intent`)
+실주문 전 추가 전제조건: 유효 approval_id(intent로 조회) · 허용 사용자 APPROVE · 미만료 ·
+`preview_hash`가 현재 주문과 일치(승인 후 변경 차단) · idempotency 미소비 · 전략/라이브스캔 intent(테스트성 기본 차단) ·
+일일 실주문 < 1 · notional ≤ 100. `process_execution`(매수)·`process_sell_submit`(매도)에 병합되어
+미승인이면 `REAL_BLOCKED`/`SELL_BLOCKED`. 승인은 "다음 단계(READY_DRY_RUN)"까지만 허용 — 자동 제출 없음.
+
+### API/대시보드
+- `GET /api/live/approvals?limit=50` · `/api/live/approvals/latest` · `/api/live/approvals/{approval_id}` —
+  로컬 jsonl만 읽음(Discord/Robinhood 미호출).
+- 대시보드 "Discord 승인 게이트" 패널: pending 승인·최근 결정·만료 상태·approve/reject 명령 예시.
+  라벨: "Discord approval is required before any real order. Approval does not bypass risk gates."
+- 현재까지: `real_orders_placed=0`, `real_order_placed=false`, `broker_order_id=null` 유지. live_auto는 감독/수동 게이트만.

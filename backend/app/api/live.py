@@ -35,6 +35,12 @@ from backend.app.services.order_receipt import (
     latest_receipt,
     load_receipts,
 )
+from backend.app.services.approval_store import (
+    ApprovalView,
+    get_request,
+    load_requests,
+    to_view,
+)
 from backend.app.services.real_order_executor import ExecutionStatus, execution_status
 from backend.app.services.real_sell_executor import SellExecutionStatus, sell_execution_status
 
@@ -136,3 +142,23 @@ async def live_execution_status() -> ExecutionStatus:
 async def live_sell_execution_status() -> SellExecutionStatus:
     """수동 매도 실행 준비 상태(읽기 전용 — scaffold). 기본 비활성, 매도 경로 없음."""
     return sell_execution_status()
+
+
+@router.get("/api/live/approvals", response_model=list[ApprovalView])
+async def live_approvals(limit: int = 50) -> list[ApprovalView]:
+    """Discord 승인 요청 목록 + 실효 상태(읽기 전용 — jsonl만 읽음, Discord/Robinhood 미호출)."""
+    return [to_view(r) for r in load_requests(limit=limit)]
+
+
+@router.get("/api/live/approvals/latest", response_model=ApprovalView | None)
+async def live_approval_latest() -> ApprovalView | None:
+    """가장 최근 승인 요청 + 실효 상태(읽기 전용). 없으면 null."""
+    reqs = load_requests(limit=1)
+    return to_view(reqs[-1]) if reqs else None
+
+
+@router.get("/api/live/approvals/{approval_id}", response_model=ApprovalView | None)
+async def live_approval_by_id(approval_id: str) -> ApprovalView | None:
+    """approval_id의 승인 요청 + 실효 상태(읽기 전용). 없으면 null."""
+    req = get_request(approval_id)
+    return to_view(req) if req else None

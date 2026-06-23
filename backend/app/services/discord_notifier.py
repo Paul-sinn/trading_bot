@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Callable
 from backend.app.core.config import Settings
 
 if TYPE_CHECKING:  # 런타임 import 안 함(순환참조 방지) — 속성만 덕타이핑으로 읽는다.
+    from backend.app.services.approval_store import ApprovalRequest
     from backend.app.services.order_receipt import OrderReceipt
     from backend.app.services.position_manager import ExitDecision
     from backend.app.services.real_order_executor import RealExecutionReceipt
@@ -224,6 +225,47 @@ def notify_order_receipt(
         return False
     return _dispatch(
         f"orderreceipt:{receipt.receipt_id}", build_order_receipt_embed(receipt),
+        settings=settings, reports_dir=reports_dir, post=post,
+    )
+
+
+def build_approval_request_embed(req: ApprovalRequest) -> dict:
+    """승인 요청 embed — 승인/거부 명령 포함. 시크릿/전체 계좌번호 미포함(last4만)."""
+    color = RED if req.side == "SELL" else GREEN
+    icon = "🔴" if req.side == "SELL" else "🟢"
+    fields = [
+        _field("종목", req.symbol),
+        _field("방향", req.side),
+        _field("주문유형", req.order_type),
+        _field("지정가", req.limit_price),
+        _field("노셔널", f"${req.notional}" if req.notional is not None else None),
+        _field("수량", req.quantity),
+        _field("계좌", req.account_last4),
+        _field("전략", req.strategy_id),
+        _field("만료", req.expires_at),
+        _field("approval_id", req.approval_id, inline=False),
+        _field("승인", f"`!approve {req.approval_id}`"),
+        _field("거부", f"`!reject {req.approval_id}`"),
+    ]
+    return {
+        "title": f"{icon} 실주문 승인 요청 ({req.type})",
+        "color": color,
+        "description": "Discord 승인이 있어야 실주문이 진행됩니다. 승인은 리스크 게이트를 우회하지 않습니다.",
+        "fields": fields,
+        "footer": {"text": f"PENDING — 만료 전 !approve/!reject · {req.created_at}"},
+    }
+
+
+def notify_approval_request(
+    request: ApprovalRequest, *, settings: Settings | None = None, reports_dir: Path | None = None,
+    post: PostFn | None = None,
+) -> bool:
+    """승인 요청을 Discord로 전송(webhook). URL 없으면 no-op. 주문 없음."""
+    settings = settings or Settings()
+    if not settings.discord_webhook_url:
+        return False
+    return _dispatch(
+        f"approval:{request.approval_id}", build_approval_request_embed(request),
         settings=settings, reports_dir=reports_dir, post=post,
     )
 

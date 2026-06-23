@@ -49,8 +49,11 @@ def _intent(symbol="F", qty=1.0, limit=14.0, order_type="limit", side="SELL", ke
 
 
 def _enabled() -> Settings:
+    # 매도 readiness/제출 단위 테스트는 승인 게이트 이전 동작을 검증하므로 Discord 승인 요구는 끈다
+    # (별도 승인 게이트 테스트가 검증). process_sell_submit 승인 통합은 전용 테스트에서 다룬다.
     return Settings(allow_real_sell_orders=True, agentic_account_only=True,
-                    require_market_hours_for_real_order=True, require_fresh_broker_snapshot_for_real_order=True)
+                    require_market_hours_for_real_order=True, require_fresh_broker_snapshot_for_real_order=True,
+                    require_discord_approval_for_real_order=False)
 
 
 def _arm(**kw) -> RealSellArm:
