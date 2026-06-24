@@ -124,3 +124,26 @@
 - 대시보드 "Discord 승인 게이트" 패널: pending 승인·최근 결정·만료 상태·approve/reject 명령 예시.
   라벨: "Discord approval is required before any real order. Approval does not bypass risk gates."
 - 현재까지: `real_orders_placed=0`, `real_order_placed=false`, `broker_order_id=null` 유지. live_auto는 감독/수동 게이트만.
+
+## 11. 자동 주문 라우터 v1 (감독 거래 — 봇이 종목/지정가 선택)
+`backend/app/services/order_router.py`. accepted_dry_run BUY OrderIntent들 중 1개를 자동 선택해 $100 이하
+실주문 프리뷰를 만들고 §10 승인 요청을 생성한다. **주문 제출은 없다**(승인 게이트 뒤 별도 단계). Paul이
+종목/지정가를 수동 선택하지 않는다.
+
+- **후보 자격**: 전략/라이브스캔 생성(strategy_id==live_strategy_id) · 테스트성 차단 · BUY only · equity only ·
+  LLM/mock approve · accepted_dry_run · 미실행(executed_keys) · 중복 승인요청 없음 · 중복 미체결 매수 없음.
+- **글로벌 차단**: 스냅샷 없음/stale · 장시간 아님 · `MAX_REAL_ORDERS_PER_DAY` 초과 ·
+  `ORDER_ROUTER_DAILY_MAX_APPROVAL_REQUESTS` 초과 → ROUTER_BLOCKED.
+- **호가 게이트**: 호가 없음(missing) · stale(`ORDER_ROUTER_QUOTE_MAX_AGE_SECONDS`) · 와이드 스프레드
+  (`ORDER_ROUTER_MAX_SPREAD_PCT`) → 후보 제외.
+- **결정론적 랭킹**: 높은 신뢰도 + 좁은 스프레드 + 신선 호가 선호. 동점은 symbol 알파벳.
+- **주문유형 정책($100 캡)**: ref(ask 우선)≤$100 → 지정가 매수(limit=ask*(1+buffer), 캡 내, qty=floor(100/limit)≥1).
+  ref>$100 → 분수 시장가 매수(dollar_amount=$100), `ORDER_ROUTER_ALLOW_FRACTIONAL_MARKET_BUY=true` +
+  최소 신뢰도(`ORDER_ROUTER_MIN_CONFIDENCE_FOR_FRACTIONAL`)일 때만. 비활성/저신뢰면 차단.
+- **승인 요청**: 선택 시 §10 `create_approval_request`로 PENDING 요청 생성 + Discord 전송. bid/ask/last/spread%
+  포함, preview_hash 계산(주문 변경 시 해시 변경 → 게이트 차단). 결정은 `order_router_decisions.jsonl`에 기록.
+- **API/대시보드**: `GET /api/live/order-router/status`·`/order-router/latest`(읽기 전용 — 선택/승인 실행 안 함).
+  "자동 주문 라우터" 패널: 선택 후보·주문유형·노셔널·지정가/달러·스프레드·라우터 결정·승인 상태.
+  라벨: "Bot selects the trade. Discord approval is still required before any real order."
+- **금지**: 주문 제출·Robinhood write(`mcp__robinhood…`)·`place_equity_order`·옵션·매도·unsupervised auto.
+- 현재까지: `real_orders_placed=0` 항상. 라우터는 후보 선택 + 승인 요청까지만 — 실주문 0.

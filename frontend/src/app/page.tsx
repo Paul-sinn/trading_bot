@@ -8,6 +8,7 @@ import { DiscordApprovalPanel } from "@/components/dashboard/DiscordApproval";
 import { LiveControls } from "@/components/dashboard/LiveControls";
 import { LiveTicker } from "@/components/dashboard/LiveTicker";
 import { OrderReceiptsPanel } from "@/components/dashboard/OrderReceipts";
+import { OrderRouterPanel } from "@/components/dashboard/OrderRouter";
 import { ExecutionReadinessPanel } from "@/components/dashboard/ExecutionReadiness";
 import { PositionExitManagerPanel } from "@/components/dashboard/PositionExitManager";
 import { SellExecutionReadinessPanel } from "@/components/dashboard/SellExecutionReadiness";
@@ -18,7 +19,9 @@ import {
   getExecutionStatus,
   getExits,
   getLatestApproval,
+  getLatestRouterDecision,
   getLiveStatus,
+  getOrderRouterStatus,
   getOrderIntents,
   getOrderReceipts,
   getPortfolio,
@@ -57,6 +60,8 @@ export default async function DashboardPage() {
   const sellExecutionStatus = await getSellExecutionStatus();
   const approvals = (await getApprovals(50)) ?? [];
   const latestApproval = await getLatestApproval();
+  const routerStatus = await getOrderRouterStatus();
+  const latestRouterDecision = await getLatestRouterDecision();
   const positions = (await getPositions()) ?? [];
   const exits = (await getExits(50)) ?? [];
   const wr = winRate();
@@ -126,6 +131,9 @@ export default async function DashboardPage() {
 
       {/* 수동 매도 실행 준비(scaffold) — 기본 비활성, 매도 경로 없음 */}
       <SellExecutionReadinessPanel status={sellExecutionStatus} />
+
+      {/* 자동 주문 라우터 — 봇이 후보 선택, 실주문 전 Discord 승인 필수 */}
+      <OrderRouterPanel status={routerStatus} latest={latestRouterDecision} />
 
       {/* Discord 승인 게이트 — 실주문 전 사람 승인 필수(리스크 게이트 우회 아님) */}
       <DiscordApprovalPanel approvals={approvals} latest={latestApproval} />

@@ -516,6 +516,53 @@ export interface ExitDecision {
   real_orders_placed: number;
 }
 
+/** backend: services/order_router.py OrderRouterStatus. 자동 라우터 설정 + 일일 카운트(읽기 전용). */
+export interface OrderRouterStatus {
+  max_notional_usd: number;
+  allow_fractional_market_buy: boolean;
+  max_spread_pct: number;
+  quote_max_age_seconds: number;
+  daily_max_approval_requests: number;
+  approval_requests_today: number;
+  real_orders_today: number;
+  market_open: boolean;
+  latest_decision: string | null;
+  latest_reason: string | null;
+  latest_approval_id: string | null;
+  real_orders_placed: number;
+}
+
+/** backend: services/order_router.py SelectedPreview. 라우터가 고른 후보 프리뷰(주문 아님). */
+export interface RouterSelectedPreview {
+  symbol: string;
+  side: string;
+  order_type: string; // limit | market
+  notional: number;
+  quantity: number | null;
+  dollar_amount: number | null;
+  limit_price: number | null;
+  bid: number | null;
+  ask: number | null;
+  last: number | null;
+  spread_pct: number | null;
+  strategy_id: string;
+  source_intent_id: string;
+  confidence: number | null;
+  score: number;
+}
+
+/** backend: services/order_router.py OrderRouterResult. 라우터 결정(읽기 전용 — real_orders_placed=0). */
+export interface OrderRouterResult {
+  timestamp: string;
+  decision: "ROUTER_SELECTED" | "ROUTER_BLOCKED";
+  reason: string;
+  block_reasons: string[];
+  selected: RouterSelectedPreview | null;
+  approval_id: string | null;
+  candidates_considered: number;
+  real_orders_placed: number;
+}
+
 /** backend: services/approval_store.py ApprovalView. Discord 승인 요청 + 실효 상태(읽기 전용 — broker_order_id 없음). */
 export interface ApprovalView {
   approval_id: string;

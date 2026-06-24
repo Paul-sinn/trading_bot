@@ -197,6 +197,10 @@ def build_snapshot_from_raw(
             {
                 "symbol": quote.get("symbol"),
                 "price": _as_float(quote.get("last_trade_price") or quote.get("last_non_reg_trade_price")),
+                # 자동 라우터의 지정가/스프레드 계산용 호가(있을 때만). 미제공 시 None → 라우터가 fail-closed.
+                "bid": _as_float(quote.get("bid_price")),
+                "ask": _as_float(quote.get("ask_price")),
+                "as_of": quote.get("updated_at") or quote.get("last_trade_price_updated_at"),
             }
         )
 

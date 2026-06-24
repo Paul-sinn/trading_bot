@@ -18,6 +18,8 @@ import type {
   LiveWeeklyRecord,
   OrderIntent,
   OrderReceipt,
+  OrderRouterResult,
+  OrderRouterStatus,
   MarketDirection,
   Portfolio,
   SellExecutionStatus,
@@ -211,6 +213,16 @@ export function getApprovals(limit = 50): Promise<ApprovalView[] | null> {
 /** 가장 최근 Discord 승인 요청 + 실효 상태(읽기 전용). 실패 시 null. */
 export function getLatestApproval(): Promise<ApprovalView | null> {
   return apiFetch<ApprovalView>("/api/live/approvals/latest");
+}
+
+/** 자동 주문 라우터 설정 + 일일 카운트(읽기 전용 — 선택/승인 실행 안 함). 실패 시 null. */
+export function getOrderRouterStatus(): Promise<OrderRouterStatus | null> {
+  return apiFetch<OrderRouterStatus>("/api/live/order-router/status");
+}
+
+/** 가장 최근 라우터 결정(읽기 전용 — jsonl만). 실패 시 null. */
+export function getLatestRouterDecision(): Promise<OrderRouterResult | null> {
+  return apiFetch<OrderRouterResult>("/api/live/order-router/latest");
 }
 
 // --- 포지션 / 청산 매니저(read-only, dry-run) ---

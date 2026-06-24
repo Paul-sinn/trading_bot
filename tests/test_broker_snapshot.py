@@ -68,7 +68,8 @@ def test_build_snapshot_masks_account_and_maps_fields():
     assert snap.open_orders == [
         {"symbol": "NVDA", "side": "buy", "state": "new", "quantity": 1.0}
     ]
-    assert snap.quotes == [{"symbol": "SPY", "price": 746.57}]
+    # 라우터용 호가 필드(bid/ask/as_of)는 원본에 없으면 None.
+    assert snap.quotes == [{"symbol": "SPY", "price": 746.57, "bid": None, "ask": None, "as_of": None}]
     assert snap.real_orders_placed == 0
     assert snap.errors == []
 

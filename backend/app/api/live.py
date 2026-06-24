@@ -41,6 +41,12 @@ from backend.app.services.approval_store import (
     load_requests,
     to_view,
 )
+from backend.app.services.order_router import (
+    OrderRouterResult,
+    OrderRouterStatus,
+    latest_router_decision,
+    router_status,
+)
 from backend.app.services.real_order_executor import ExecutionStatus, execution_status
 from backend.app.services.real_sell_executor import SellExecutionStatus, sell_execution_status
 
@@ -162,3 +168,15 @@ async def live_approval_by_id(approval_id: str) -> ApprovalView | None:
     """approval_id의 승인 요청 + 실효 상태(읽기 전용). 없으면 null."""
     req = get_request(approval_id)
     return to_view(req) if req else None
+
+
+@router.get("/api/live/order-router/status", response_model=OrderRouterStatus)
+async def live_order_router_status() -> OrderRouterStatus:
+    """자동 주문 라우터 설정 + 일일 카운트(읽기 전용 — 선택/승인 실행 안 함, 주문 없음)."""
+    return router_status()
+
+
+@router.get("/api/live/order-router/latest", response_model=OrderRouterResult | None)
+async def live_order_router_latest() -> OrderRouterResult | None:
+    """가장 최근 라우터 결정(읽기 전용 — jsonl만 읽음). 없으면 null."""
+    return latest_router_decision()

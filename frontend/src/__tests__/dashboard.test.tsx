@@ -19,6 +19,8 @@ const getExits = vi.fn().mockResolvedValue([]);
 const getSellExecutionStatus = vi.fn().mockResolvedValue(null);
 const getApprovals = vi.fn().mockResolvedValue([]);
 const getLatestApproval = vi.fn().mockResolvedValue(null);
+const getOrderRouterStatus = vi.fn().mockResolvedValue(null);
+const getLatestRouterDecision = vi.fn().mockResolvedValue(null);
 vi.mock("@/lib/api", () => ({
   getPortfolio: vi.fn().mockResolvedValue(mockPortfolio),
   getLiveStatus: vi.fn().mockResolvedValue(mockLiveStatus),
@@ -34,6 +36,8 @@ vi.mock("@/lib/api", () => ({
   getSellExecutionStatus: (...args: unknown[]) => getSellExecutionStatus(...args),
   getApprovals: (...args: unknown[]) => getApprovals(...args),
   getLatestApproval: (...args: unknown[]) => getLatestApproval(...args),
+  getOrderRouterStatus: (...args: unknown[]) => getOrderRouterStatus(...args),
+  getLatestRouterDecision: (...args: unknown[]) => getLatestRouterDecision(...args),
   startLive: (...args: unknown[]) => startLive(...args),
   stopLive: (...args: unknown[]) => stopLive(...args),
   emergencyHalt: (...args: unknown[]) => emergencyHalt(...args),
@@ -142,6 +146,16 @@ describe("① 대시보드 페이지", () => {
     expect(
       screen.getByText(
         "Real sell requires manual arm and CONFIRM_REAL_SELL_1. No automatic sell.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("자동 주문 라우터 패널(봇 선택 + 승인 필수 라벨)을 렌더한다", async () => {
+    render(await DashboardPage());
+    expect(screen.getByText("자동 주문 라우터")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Bot selects the trade. Discord approval is still required before any real order.",
       ),
     ).toBeInTheDocument();
   });

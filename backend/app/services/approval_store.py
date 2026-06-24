@@ -60,6 +60,11 @@ class ApprovalRequest(BaseModel):
     limit_price: float | None = None
     notional: float | None = None
     account_last4: str | None = None
+    # 자동 라우터가 채우는 호가 컨텍스트(있을 때만). 사람이 승인 전에 시세를 확인하도록.
+    bid: float | None = None
+    ask: float | None = None
+    last: float | None = None
+    spread_pct: float | None = None
     source_intent_id: str
     strategy_id: str
     idempotency_key: str
@@ -168,6 +173,12 @@ def get_request(approval_id: str, *, reports_dir: Path | None = None) -> Approva
     return matches[-1] if matches else None
 
 
+def count_requests_today(*, reports_dir: Path | None = None, now: datetime | None = None) -> int:
+    """오늘(UTC) 생성된 승인 요청 수. 라우터의 일일 승인 요청 캡 입력."""
+    today = (now or _now()).date().isoformat()
+    return sum(1 for r in load_requests(limit=500, reports_dir=reports_dir) if (r.created_at or "")[:10] == today)
+
+
 def get_request_for_intent(source_intent_id: str, *, reports_dir: Path | None = None) -> ApprovalRequest | None:
     """source_intent_id(=scan_event_key)의 가장 최근 승인 요청. 제출 시점에 intent로 요청을 찾는다."""
     matches = [r for r in load_requests(limit=500, reports_dir=reports_dir) if r.source_intent_id == source_intent_id]
@@ -229,6 +240,10 @@ class ApprovalView(BaseModel):
     limit_price: float | None = None
     notional: float | None = None
     account_last4: str | None = None
+    bid: float | None = None
+    ask: float | None = None
+    last: float | None = None
+    spread_pct: float | None = None
     strategy_id: str
     status: ApprovalStatus
     expired: bool
@@ -247,7 +262,8 @@ def to_view(req: ApprovalRequest, *, reports_dir: Path | None = None, now: datet
         approval_id=req.approval_id, created_at=req.created_at, expires_at=req.expires_at,
         type=req.type, symbol=req.symbol, side=req.side, order_type=req.order_type,
         quantity=req.quantity, dollar_amount=req.dollar_amount, limit_price=req.limit_price,
-        notional=req.notional, account_last4=req.account_last4, strategy_id=req.strategy_id,
+        notional=req.notional, account_last4=req.account_last4,
+        bid=req.bid, ask=req.ask, last=req.last, spread_pct=req.spread_pct, strategy_id=req.strategy_id,
         status=status, expired=_is_expired(req, now=now), reason=req.reason,
         approve_command=f"!approve {req.approval_id}", reject_command=f"!reject {req.approval_id}",
         decided_by=(last.discord_username or last.discord_user_id) if last else None,
@@ -274,10 +290,15 @@ def create_approval_request(
     reports_dir: Path | None = None,
     post=None,
     send: bool = True,
+    bid: float | None = None,
+    ask: float | None = None,
+    last: float | None = None,
+    spread_pct: float | None = None,
 ) -> ApprovalRequest:
     """READY 상태 실주문 intent로 승인 요청을 만들어 append + Discord 전송한다(주문 아님).
 
     전략/라이브스캔 생성 intent만 허용(테스트성/수동 intent는 ApprovalRequestRefused). notional 캡 초과도 거부.
+    bid/ask/last/spread_pct는 자동 라우터의 호가 컨텍스트(선택).
     """
     now = now or _now()
     # 출처 게이트: 테스트성 intent는 승인 요청조차 만들지 않는다(설정으로만 예외 허용).
@@ -297,10 +318,12 @@ def create_approval_request(
         strategy_id=intent.strategy_id, idempotency_key=intent.scan_event_key,
     )
     req = ApprovalRequest(
+        created_at=now.isoformat(),
         expires_at=(now + timedelta(seconds=settings.approval_request_ttl_seconds)).isoformat(),
         type=type, symbol=intent.symbol, side=intent.side, order_type=intent.planned_order_type,
         quantity=intent.planned_quantity, dollar_amount=notional, limit_price=intent.planned_limit_price,
-        notional=notional, account_last4=account_last4, source_intent_id=intent.scan_event_key,
+        notional=notional, account_last4=account_last4, bid=bid, ask=ask, last=last, spread_pct=spread_pct,
+        source_intent_id=intent.scan_event_key,
         strategy_id=intent.strategy_id, idempotency_key=intent.scan_event_key, preview_hash=preview_hash,
     )
     append_request(req, reports_dir=reports_dir)

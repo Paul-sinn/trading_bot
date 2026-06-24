@@ -67,6 +67,17 @@ class Settings(BaseSettings):
     # 테스트 전용 intent로 실주문 내는 것을 허용할지(기본 금지 — fail-closed).
     test_only_intent_real_order_allowed: bool = False
 
+    # 자동 주문 라우터(v1) — 전략 생성 BUY 후보 중 1개를 자동 선택해 $100 이하 실주문 프리뷰를 만들고
+    # Discord 승인 요청을 보낸다. **주문 제출은 하지 않는다**(승인 게이트 뒤에서만, 별도 단계). Paul이
+    # 종목/지정가를 수동 선택하지 않게 한다. 모든 안전 게이트(승인·캡·시장시간·신선도)는 그대로 적용.
+    order_router_max_notional_usd: float = 100.0
+    order_router_allow_fractional_market_buy: bool = True  # 고가주는 달러 기반 분수 시장가 매수 프리뷰 허용.
+    order_router_max_spread_pct: float = 0.003  # 호가 스프레드 상한(초과 시 후보 제외).
+    order_router_quote_max_age_seconds: int = 30  # 호가 신선도 상한(초과 시 stale로 제외).
+    order_router_daily_max_approval_requests: int = 1  # 하루 라우터 승인 요청 최대 건수.
+    order_router_limit_buffer_pct: float = 0.001  # 지정가 = ask * (1+buffer), 안전 상한 내에서.
+    order_router_min_confidence_for_fractional: float = 0.7  # 분수 시장가 매수 최소 신뢰도(고신뢰만).
+
     # Discord 승인 게이트 — 실주문(매수/매도) 전 Discord에서 사람이 명시적으로 !approve 해야 한다.
     # 승인은 리스크 게이트를 우회하지 않는다(승인 + 모든 게이트 + 확인까지 통과해야 제출 시도).
     require_discord_approval_for_real_order: bool = True
