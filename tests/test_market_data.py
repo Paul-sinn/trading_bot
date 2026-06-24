@@ -19,7 +19,9 @@ from backend.app.services.market_data import (
 
 
 def test_default_provider_is_mock():
-    provider = get_market_data_provider(Settings())
+    # 코드 기본값이 mock인지 검증(.env의 MARKET_DATA_PROVIDER 영향 배제 — hermetic).
+    assert Settings.model_fields["market_data_provider"].default == "mock"
+    provider = get_market_data_provider(Settings(market_data_provider="mock"))
     assert provider.name == "mock"
     assert provider.provider_status().available is True
 

@@ -20,9 +20,19 @@ class Settings(BaseSettings):
     # report_only 시작은 이 값과 무관하게 가능하지만, 어떤 모드에서도 실주문 경로는 없다(MCP 미연동).
     live_trading_enabled: bool = False
 
-    # 라이브 시장데이터 provider. 허용 값: "mock"(기본, 결정론·네트워크 없음) / "free"(yfinance 무료).
-    # 알 수 없는 값은 팩토리에서 fail-closed(예외). Norgate는 리서치/섀도 전용 — 라이브 시작에 불필요.
+    # 라이브 시장데이터 provider. 허용 값: "mock"(기본, 결정론·네트워크 없음) / "free"(yfinance 무료) /
+    # "alpaca"(Alpaca 시장데이터 — 시세 전용, 거래 아님). 알 수 없는 값은 팩토리에서 fail-closed(예외).
     market_data_provider: str = "mock"
+
+    # Alpaca 시장데이터(시세 전용 — 주문/거래에 절대 사용 안 함). 키는 .env에서만. 키 없으면 fail-safe
+    # (provider unavailable → 스캔이 후보를 만들지 않음). Robinhood MCP가 여전히 브로커/주문 경로다.
+    alpaca_api_key_id: str | None = None
+    alpaca_api_secret_key: str | None = None
+    alpaca_data_base_url: str = "https://data.alpaca.markets"
+    alpaca_data_feed: str = "iex"  # Basic 플랜 무료 피드.
+    alpaca_bar_timeframe: str = "1Day"
+    alpaca_lookback_days: int = 300
+    alpaca_trading_enabled: bool = False  # 안전: Alpaca는 시장데이터 전용, 거래 비활성.
     # report_only 라이브 스캔 루프 토글/주기. 스캔은 주문/LLM 없이 베이스라인 유니버스만 모니터링한다.
     live_scan_enabled: bool = True
     live_price_poll_interval_seconds: int = 60

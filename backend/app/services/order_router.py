@@ -90,13 +90,52 @@ class RouterQuote(BaseModel):
         return (now - t).total_seconds()
 
 
-def _quote_for(snapshot: BrokerSnapshot, symbol: str) -> RouterQuote | None:
+def _quote_for(
+    snapshot: BrokerSnapshot, symbol: str, *, live_quotes: dict[str, RouterQuote] | None = None
+) -> RouterQuote | None:
+    # 우선순위: 라이브 호가(Alpaca 등) → 브로커 스냅샷 호가. 라이브는 ref price/spread/freshness용.
+    if live_quotes and symbol in live_quotes:
+        return live_quotes[symbol]
     for q in snapshot.quotes:
         if isinstance(q, dict) and q.get("symbol") == symbol:
             return RouterQuote(symbol=symbol, bid=q.get("bid"), ask=q.get("ask"),
                                last=q.get("price") if q.get("last") is None else q.get("last"),
                                as_of=q.get("as_of"))
     return None
+
+
+def _norm_ts(ts: str | None) -> str | None:
+    """Alpaca RFC3339(나노초/Z 포함)를 fromisoformat 호환(마이크로초 + +00:00)으로 정규화."""
+    if not ts:
+        return ts
+    import re
+
+    m = re.match(r"^(.*T\d{2}:\d{2}:\d{2})(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$", ts)
+    if not m:
+        return ts
+    base, frac, tz = m.group(1), (m.group(2) or ""), (m.group(3) or "+00:00")
+    if frac:
+        frac = frac[:7]  # 소수점 + 최대 6자리(마이크로초)
+    return base + frac + ("+00:00" if tz == "Z" else tz)
+
+
+def _alpaca_router_quotes(symbols: set[str], settings: Settings) -> dict[str, RouterQuote]:
+    """MARKET_DATA_PROVIDER=alpaca일 때 후보 심볼의 라이브 호가를 가져온다. 오류/미설정은 fail-safe({})."""
+    if (settings.market_data_provider or "").strip().lower() != "alpaca" or not symbols:
+        return {}
+    try:
+        from backend.app.services.market_data import get_market_data_provider
+
+        prov = get_market_data_provider(settings)
+        if getattr(prov, "name", "") != "alpaca":
+            return {}
+        mq = prov.get_batch_latest_quotes(sorted(symbols))  # type: ignore[attr-defined]
+        return {
+            sym: RouterQuote(symbol=sym, bid=q.bid, ask=q.ask, last=q.last, as_of=_norm_ts(q.quote_timestamp))
+            for sym, q in mq.items()
+        }
+    except Exception:  # noqa: BLE001 - fail-safe: 호가 없음 → 후보가 막힘(approval 생성 안 됨)
+        return {}
 
 
 def _has_open_buy(snapshot: BrokerSnapshot, symbol: str) -> bool:
@@ -272,14 +311,20 @@ def select_and_route(
     market_open: bool | None = None,
     intents: list[OrderIntent] | None = None,
     snapshot: BrokerSnapshot | None = None,
+    live_quotes: dict[str, RouterQuote] | None = None,
     send: bool = True,
     post=None,
 ) -> OrderRouterResult:
-    """후보를 선택해 프리뷰 + 승인 요청을 만든다(주문 제출 없음). 결과를 jsonl에 기록한다."""
+    """후보를 선택해 프리뷰 + 승인 요청을 만든다(주문 제출 없음). 결과를 jsonl에 기록한다.
+
+    호가는 라이브(Alpaca, MARKET_DATA_PROVIDER=alpaca)를 우선 쓰고 없으면 브로커 스냅샷으로 폴백한다.
+    """
     settings = settings or Settings()
     now = now or _now()
     snapshot = snapshot if snapshot is not None else latest_snapshot(reports_dir=reports_dir)
     intents = intents if intents is not None else _load_intents(reports_dir)
+    if live_quotes is None:  # provider=alpaca면 후보 심볼의 라이브 호가를 가져온다(fail-safe).
+        live_quotes = _alpaca_router_quotes({i.symbol for i in intents}, settings)
 
     gb = _global_blocks(settings=settings, snapshot=snapshot, now=now, market_open=market_open, reports_dir=reports_dir)
     if gb:
@@ -299,7 +344,7 @@ def select_and_route(
         considered += 1
         if _eligible(intent, settings=settings, snapshot=snapshot, executed=executed, reports_dir=reports_dir):
             continue
-        quote = _quote_for(snapshot, intent.symbol)
+        quote = _quote_for(snapshot, intent.symbol, live_quotes=live_quotes)
         if _quote_block_reasons(quote, settings=settings, snapshot=snapshot, now=now):
             continue
         assert quote is not None

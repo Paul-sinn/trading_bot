@@ -23,7 +23,7 @@ from pydantic import BaseModel
 from agents.data_adapter import FreeDailyProvider
 from backend.app.core.config import Settings
 
-ALLOWED_PROVIDERS = ("mock", "free")
+ALLOWED_PROVIDERS = ("mock", "free", "alpaca")
 SPY_SYMBOL = "SPY"
 VIX_SYMBOL = "^VIX"
 
@@ -32,10 +32,26 @@ class MarketDataProviderNotConfigured(RuntimeError):
     """알 수 없는/미설정 provider — fail-closed."""
 
 
+class AlpacaNotConfigured(RuntimeError):
+    """Alpaca 키 미설정 — fail-safe(스캔이 후보를 만들지 않게 호출부가 ERROR 처리)."""
+
+
 class Quote(BaseModel):
     symbol: str
     price: float
     ts: str
+
+
+class MarketQuote(BaseModel):
+    """정규화된 호가(라우터의 ref price/spread/freshness 용). 시세 전용 — 주문 아님."""
+
+    symbol: str
+    bid: float | None = None
+    ask: float | None = None
+    last: float | None = None
+    quote_timestamp: str | None = None
+    source: str = "alpaca"
+    feed: str | None = None
 
 
 class ProviderStatus(BaseModel):
@@ -165,6 +181,132 @@ class FreeMarketDataProvider:
         return ProviderStatus(name=self.name, available=True, detail="yfinance")
 
 
+class AlpacaMarketDataProvider:
+    """Alpaca 시장데이터 provider — **시세 전용(주문/거래 아님)**.
+
+    HTTP(httpx)로 Alpaca Data API(v2)를 호출한다. 테스트는 `http_get`을 주입해 네트워크 없이 검증한다.
+    키 미설정/네트워크 오류/빈 응답은 예외로 올려 호출부(스캔)가 ERROR로 처리 → BUY_CANDIDATE 안 만듦.
+    APCA-API-KEY-ID/SECRET 헤더만 사용하고 키 값은 로그/페이로드에 노출하지 않는다.
+    """
+
+    name = "alpaca"
+
+    def __init__(self, *, settings: Settings | None = None, http_get=None) -> None:
+        s = settings or Settings()
+        self._key = (s.alpaca_api_key_id or "").strip()
+        self._secret = (s.alpaca_api_secret_key or "").strip()
+        self._base = (s.alpaca_data_base_url or "https://data.alpaca.markets").rstrip("/")
+        self._feed = s.alpaca_data_feed or "iex"
+        self._timeframe = s.alpaca_bar_timeframe or "1Day"
+        self._lookback = int(s.alpaca_lookback_days or 300)
+        # http_get(url, headers, params) -> dict(JSON). None이면 실제 httpx 사용.
+        self._http_get = http_get
+
+    def _configured(self) -> bool:
+        return bool(self._key and self._secret)
+
+    def _get(self, path: str, params: dict) -> dict:
+        if not self._configured():
+            raise AlpacaNotConfigured("ALPACA_API_KEY_ID/ALPACA_API_SECRET_KEY 미설정")
+        url = f"{self._base}{path}"
+        headers = {"APCA-API-KEY-ID": self._key, "APCA-API-SECRET-KEY": self._secret}
+        if self._http_get is not None:
+            return self._http_get(url, headers, params)
+        import httpx
+
+        resp = httpx.get(url, headers=headers, params=params, timeout=10.0)
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_recent_bars(self, symbol: str, lookback_days: int | None = None) -> pd.DataFrame:
+        days = int(lookback_days or self._lookback)
+        data = self._get(
+            f"/v2/stocks/{symbol}/bars",
+            {"timeframe": self._timeframe, "limit": days, "feed": self._feed, "adjustment": "raw"},
+        )
+        rows = data.get("bars") or []
+        if not rows:
+            # 빈 bars → 빈 프레임(스캔이 INSUFFICIENT_DATA로 처리).
+            return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+        idx = pd.to_datetime([r.get("t") for r in rows], utc=True, errors="coerce")
+        df = pd.DataFrame(
+            {
+                "open": [float(r.get("o")) for r in rows],
+                "high": [float(r.get("h")) for r in rows],
+                "low": [float(r.get("l")) for r in rows],
+                "close": [float(r.get("c")) for r in rows],
+                "volume": [float(r.get("v", 0.0)) for r in rows],
+            },
+            index=idx,
+        ).sort_index()
+        df.attrs["source"] = "alpaca"
+        df.attrs["feed"] = self._feed
+        return df.tail(days)
+
+    def get_latest_quote(self, symbol: str) -> MarketQuote:
+        q = (self._get(f"/v2/stocks/{symbol}/quotes/latest", {"feed": self._feed}).get("quote") or {})
+        last: float | None = None
+        try:  # 최신 체결가(best effort) — 실패해도 호가는 반환.
+            t = self._get(f"/v2/stocks/{symbol}/trades/latest", {"feed": self._feed}).get("trade") or {}
+            last = float(t["p"]) if t.get("p") is not None else None
+        except Exception:  # noqa: BLE001
+            last = None
+        return MarketQuote(
+            symbol=symbol,
+            bid=float(q["bp"]) if q.get("bp") is not None else None,
+            ask=float(q["ap"]) if q.get("ap") is not None else None,
+            last=last,
+            quote_timestamp=q.get("t"),
+            source="alpaca",
+            feed=self._feed,
+        )
+
+    def get_batch_latest_quotes(self, symbols: list[str]) -> dict[str, MarketQuote]:
+        if not symbols:
+            return {}
+        data = self._get("/v2/stocks/quotes/latest", {"symbols": ",".join(symbols), "feed": self._feed})
+        quotes = data.get("quotes") or {}
+        out: dict[str, MarketQuote] = {}
+        for sym, q in quotes.items():
+            if not isinstance(q, dict):
+                continue
+            out[sym] = MarketQuote(
+                symbol=sym,
+                bid=float(q["bp"]) if q.get("bp") is not None else None,
+                ask=float(q["ap"]) if q.get("ap") is not None else None,
+                last=None,
+                quote_timestamp=q.get("t"),
+                source="alpaca",
+                feed=self._feed,
+            )
+        return out
+
+    # --- MarketDataProvider Protocol 호환 ---
+    def get_quote(self, symbol: str) -> Quote:
+        mq = self.get_latest_quote(symbol)
+        price = mq.last
+        if price is None and mq.bid is not None and mq.ask is not None:
+            price = (mq.bid + mq.ask) / 2.0
+        if price is None:
+            price = float(self.get_recent_bars(symbol, lookback_days=1)["close"].iloc[-1])
+        return Quote(symbol=symbol, price=price, ts=mq.quote_timestamp or _now_iso())
+
+    def get_quotes(self, symbols: list[str]) -> dict[str, Quote]:
+        out: dict[str, Quote] = {}
+        for s in symbols:
+            try:
+                out[s] = self.get_quote(s)
+            except Exception:  # noqa: BLE001 - graceful: 심볼 실패는 건너뜀
+                continue
+        return out
+
+    def provider_status(self) -> ProviderStatus:
+        # 네트워크 호출 없이 가용성 추정: 키가 설정돼 있으면 available.
+        if not self._configured():
+            return ProviderStatus(name=self.name, available=False, detail="ALPACA 키 미설정(시장데이터 비활성)")
+        return ProviderStatus(name=self.name, available=True, detail=f"alpaca/{self._feed}")
+
+
 def get_market_data_provider(settings: Settings | None = None) -> MarketDataProvider:
     """`MARKET_DATA_PROVIDER` 기반 provider 선택. 알 수 없는 값은 fail-closed(예외)."""
     settings = settings or Settings()
@@ -173,6 +315,8 @@ def get_market_data_provider(settings: Settings | None = None) -> MarketDataProv
         return MockMarketDataProvider()
     if name == "free":
         return FreeMarketDataProvider()
+    if name == "alpaca":
+        return AlpacaMarketDataProvider(settings=settings)
     raise MarketDataProviderNotConfigured(
         f"알 수 없는 MARKET_DATA_PROVIDER={settings.market_data_provider!r} "
         f"(허용: {', '.join(ALLOWED_PROVIDERS)})"

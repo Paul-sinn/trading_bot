@@ -225,3 +225,22 @@
 - **API/대시보드**: execution-status에 latest_submit_mode·latest_broker_order_id. 라벨:
   "Discord-approved orders are submitted only after all gates are rechecked."
 - 현재까지: `real_orders_placed=0` 항상. 실 MCP write는 워커가 submit_fn을 주입하는 미래 라이브 런에서만.
+
+## 16. Alpaca 시장데이터 provider v1 (시세 전용 — 거래 아님)
+`backend/app/services/market_data.py`의 `AlpacaMarketDataProvider`. `MARKET_DATA_PROVIDER=alpaca`면 라이브
+스캔이 mock/yfinance 대신 Alpaca 시세를 쓴다. **Alpaca는 시세 전용 — 주문/거래에 절대 사용 안 함.**
+Robinhood MCP가 여전히 브로커/주문 경로다. `ALPACA_TRADING_ENABLED=false`.
+
+- **env**: `ALPACA_API_KEY_ID`·`ALPACA_API_SECRET_KEY`·`ALPACA_DATA_BASE_URL`(기본 https://data.alpaca.markets)·
+  `ALPACA_DATA_FEED=iex`·`ALPACA_BAR_TIMEFRAME=1Day`·`ALPACA_LOOKBACK_DAYS=300`. 키는 헤더로만, 로그/페이로드 미노출.
+- **메서드**: `get_recent_bars(symbol, lookback_days)`(정규화 OHLCV DataFrame, attrs.source/feed) ·
+  `get_latest_quote(symbol)`·`get_batch_latest_quotes(symbols)` → `MarketQuote`(symbol·bid·ask·last·
+  quote_timestamp·source="alpaca"·feed="iex"). 테스트는 `http_get` 주입으로 네트워크 없이 검증.
+- **선택**: `get_market_data_provider`가 alpaca를 인식(`ALLOWED_PROVIDERS=mock|free|alpaca`). 상태/대시보드의
+  provider 이름이 alpaca로 표시. mock은 테스트용으로 유지.
+- **라우터 통합**: provider=alpaca면 라우터가 ref price/spread/freshness에 **Alpaca 라이브 호가 우선**(없으면
+  브로커 스냅샷 폴백). buying_power/positions/open_orders는 여전히 Robinhood 스냅샷으로 점검. Alpaca 타임스탬프는
+  나노초/Z를 정규화(`_norm_ts`).
+- **fail-safe**: 키 미설정/API 오류/레이트리밋/stale/빈 bars → 예외 또는 빈 프레임 → 스캔 ERROR/INSUFFICIENT_DATA →
+  **BUY_CANDIDATE 없음 → 승인 요청 생성 안 됨**. 라우터 호가 fetch 실패도 {} → 후보 차단.
+- **금지**: 주문/Robinhood write(`mcp__robinhood…`/`place_equity_order`)·Alpaca 거래. 시세 전용.
