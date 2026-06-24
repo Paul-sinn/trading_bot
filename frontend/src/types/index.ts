@@ -521,6 +521,51 @@ export interface ExitDecision {
   real_orders_placed: number;
 }
 
+/** backend: services/scan_diagnostics.py SymbolDiagnostic. 종목별 진단(사람 친화 + 기술). */
+export interface SymbolDiagnostic {
+  symbol: string;
+  final_decision: "BUY_CANDIDATE" | "SKIPPED" | "ERROR";
+  human_reason: string;
+  technical_reason: string;
+  price: number | null;
+  trend_status: string;
+  momentum_status: string;
+  pullback_status: string;
+  volume_status: string;
+  regime_status: string;
+  data_status: string;
+  signal_strength: string;
+  confidence: number | null;
+  timestamp: string | null;
+  scan_status: string | null;
+  regime: string | null;
+  regime_source: string | null;
+}
+
+/** backend: services/scan_diagnostics.py ScanDiagnosticsSummary. */
+export interface ScanDiagnosticsSummary {
+  total_scanned: number;
+  buy_candidates: number;
+  skipped: number;
+  errors: number;
+  market_condition: string;
+  regime: string | null;
+  regime_source: string | null;
+  vix_value: number | null;
+  risk_reduced: boolean;
+  vix_warning: string | null;
+  main_skip_reason: string | null;
+  top_closest: { symbol: string; signal_strength: string; reason: string }[];
+  headline: string;
+  as_of: string | null;
+}
+
+/** backend: services/scan_diagnostics.py ScanDiagnosticsView. 요약 + 종목별 진단(읽기 전용). */
+export interface ScanDiagnosticsView {
+  summary: ScanDiagnosticsSummary;
+  symbols: SymbolDiagnostic[];
+}
+
 /** backend: services/live_scan.py RegimeStatus. 최신 스캔 레짐 요약(읽기 전용). VIX 폴백/위험축소 표시. */
 export interface RegimeStatus {
   regime: string | null;

@@ -24,6 +24,12 @@ from backend.app.services.live_records import (
     LiveWeeklyRecord,
 )
 from backend.app.services.live_scan import RegimeStatus, ScanEvent, regime_status
+from backend.app.services.scan_diagnostics import (
+    ScanDiagnosticsView,
+    SymbolDiagnostic,
+    latest_diagnostics,
+    recent_diagnostics,
+)
 from backend.app.services.live_session import (
     LiveActionResult,
     LiveSessionState,
@@ -119,6 +125,18 @@ async def live_scan_events(limit: int = 50) -> list[ScanEvent]:
 async def live_regime() -> RegimeStatus:
     """최신 스캔의 레짐 요약(읽기 전용 — 스캔 시작 안 함, 주문 없음). VIX 폴백/위험축소 표시."""
     return regime_status()
+
+
+@router.get("/api/live/scan-diagnostics/latest", response_model=ScanDiagnosticsView)
+async def live_scan_diagnostics_latest() -> ScanDiagnosticsView:
+    """가장 최근 스캔 사이클 진단(요약 + 종목별, 사람 친화 + 기술). 읽기 전용 — 스캔/주문 없음."""
+    return latest_diagnostics()
+
+
+@router.get("/api/live/scan-diagnostics", response_model=list[SymbolDiagnostic])
+async def live_scan_diagnostics(limit: int = 50) -> list[SymbolDiagnostic]:
+    """최근 스캔 진단 N개(읽기 전용). limit 1..500 clamp."""
+    return recent_diagnostics(limit=limit)
 
 
 @router.get("/api/live/candidates", response_model=list[Candidate])

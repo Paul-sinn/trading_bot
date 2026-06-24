@@ -23,6 +23,46 @@ const getOrderRouterStatus = vi.fn().mockResolvedValue(null);
 const getLatestRouterDecision = vi.fn().mockResolvedValue(null);
 const getOrchestratorStatus = vi.fn().mockResolvedValue(null);
 const getRegimeStatus = vi.fn().mockResolvedValue(null);
+const getScanDiagnosticsLatest = vi.fn().mockResolvedValue({
+  summary: {
+    total_scanned: 2,
+    buy_candidates: 0,
+    skipped: 2,
+    errors: 0,
+    market_condition: "시장 상태: 매수 가능 구간",
+    regime: "NORMAL_BULL",
+    regime_source: "spy+vix",
+    vix_value: 19.5,
+    risk_reduced: false,
+    vix_warning: null,
+    main_skip_reason: "상승 추세는 맞지만, 아직 매수 타이밍(눌림목·진입 조건)이 아닙니다.",
+    top_closest: [{ symbol: "F", signal_strength: "근접", reason: "아직 매수 타이밍이 아님" }],
+    headline:
+      "오늘은 시장 상태는 괜찮지만, 2개 종목 중 매수 타이밍을 통과한 종목이 없습니다. 대부분 눌림목/진입(pullback/entry) 조건을 아직 만족하지 못했습니다.",
+    as_of: "2026-06-23T15:00:00+00:00",
+  },
+  symbols: [
+    {
+      symbol: "F",
+      final_decision: "SKIPPED",
+      human_reason: "상승 추세는 맞지만, 아직 매수 타이밍(눌림목·진입 조건)이 아닙니다.",
+      technical_reason: "트리거 미충족: 눌림 없음(눌림 대기)",
+      price: 14.0,
+      trend_status: "상승 추세",
+      momentum_status: "SPY 대비 강함",
+      pullback_status: "아직 눌림목(되돌림)이 없음 — 대기",
+      volume_status: "정보 없음 (이 단계 미평가)",
+      regime_status: "매수 가능 구간",
+      data_status: "정상",
+      signal_strength: "근접",
+      confidence: null,
+      timestamp: "2026-06-23T15:00:00+00:00",
+      scan_status: "SKIP",
+      regime: "NORMAL_BULL",
+      regime_source: "spy+vix",
+    },
+  ],
+});
 vi.mock("@/lib/api", () => ({
   getPortfolio: vi.fn().mockResolvedValue(mockPortfolio),
   getLiveStatus: vi.fn().mockResolvedValue(mockLiveStatus),
@@ -42,6 +82,7 @@ vi.mock("@/lib/api", () => ({
   getLatestRouterDecision: (...args: unknown[]) => getLatestRouterDecision(...args),
   getOrchestratorStatus: (...args: unknown[]) => getOrchestratorStatus(...args),
   getRegimeStatus: (...args: unknown[]) => getRegimeStatus(...args),
+  getScanDiagnosticsLatest: (...args: unknown[]) => getScanDiagnosticsLatest(...args),
   startLive: (...args: unknown[]) => startLive(...args),
   stopLive: (...args: unknown[]) => stopLive(...args),
   emergencyHalt: (...args: unknown[]) => emergencyHalt(...args),
@@ -157,6 +198,18 @@ describe("① 대시보드 페이지", () => {
   it("레짐 필터 패널을 렌더한다", async () => {
     render(await DashboardPage());
     expect(screen.getByText("레짐 필터")).toBeInTheDocument();
+  });
+
+  it("라이브 스캔 진단 패널(사람 친화 라벨)을 렌더한다", async () => {
+    render(await DashboardPage());
+    expect(screen.getByText("라이브 스캔 진단")).toBeInTheDocument();
+    // 사람 친화 결정 라벨 + 사유가 보인다(기술 용어 아님).
+    expect(screen.getByText("봇이 매수하지 않음")).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/아직 매수 타이밍\(눌림목·진입 조건\)이 아닙니다/).length,
+    ).toBeGreaterThan(0);
+    // 고급(기술) 정보는 접힘 섹션(summary "고급 정보")으로 분리되어 있다.
+    expect(screen.getAllByText("고급 정보").length).toBeGreaterThan(0);
   });
 
   it("Market Orchestrator 패널(승인요청만 라벨)을 렌더한다", async () => {

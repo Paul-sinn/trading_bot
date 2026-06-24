@@ -11,6 +11,7 @@ import { MarketOrchestratorPanel } from "@/components/dashboard/MarketOrchestrat
 import { OrderReceiptsPanel } from "@/components/dashboard/OrderReceipts";
 import { OrderRouterPanel } from "@/components/dashboard/OrderRouter";
 import { RegimePanel } from "@/components/dashboard/RegimePanel";
+import { ScanDiagnosticsPanel } from "@/components/dashboard/ScanDiagnostics";
 import { ExecutionReadinessPanel } from "@/components/dashboard/ExecutionReadiness";
 import { PositionExitManagerPanel } from "@/components/dashboard/PositionExitManager";
 import { SellExecutionReadinessPanel } from "@/components/dashboard/SellExecutionReadiness";
@@ -26,6 +27,7 @@ import {
   getOrchestratorStatus,
   getOrderRouterStatus,
   getRegimeStatus,
+  getScanDiagnosticsLatest,
   getOrderIntents,
   getOrderReceipts,
   getPortfolio,
@@ -68,6 +70,7 @@ export default async function DashboardPage() {
   const latestRouterDecision = await getLatestRouterDecision();
   const orchestratorStatus = await getOrchestratorStatus();
   const regimeStatus = await getRegimeStatus();
+  const scanDiagnostics = await getScanDiagnosticsLatest();
   const positions = (await getPositions()) ?? [];
   const exits = (await getExits(50)) ?? [];
   const wr = winRate();
@@ -140,6 +143,9 @@ export default async function DashboardPage() {
 
       {/* 레짐 필터 — SPY+VIX(폴백) 레짐, VIX 부재 시 SPY-only 보수 */}
       <RegimePanel status={regimeStatus} />
+
+      {/* 라이브 스캔 진단 — 종목별 매수/스킵 이유(사람 친화 + 고급 정보) */}
+      <ScanDiagnosticsPanel view={scanDiagnostics} />
 
       {/* 장중 오케스트레이터 — 자동 스캔→라우터→승인요청(주문 제출 없음) */}
       <MarketOrchestratorPanel status={orchestratorStatus} />

@@ -24,6 +24,7 @@ import type {
   MarketDirection,
   Portfolio,
   RegimeStatus,
+  ScanDiagnosticsView,
   SellExecutionStatus,
   ShadowReportView,
   ShadowRunResult,
@@ -235,6 +236,11 @@ export function getOrchestratorStatus(): Promise<OrchestratorStatus | null> {
 /** 최신 스캔 레짐 요약(읽기 전용 — VIX 폴백/위험축소). 실패 시 null. */
 export function getRegimeStatus(): Promise<RegimeStatus | null> {
   return apiFetch<RegimeStatus>("/api/live/regime");
+}
+
+/** 최신 스캔 진단(요약 + 종목별, 사람 친화 + 기술). 읽기 전용. 실패 시 null. */
+export function getScanDiagnosticsLatest(): Promise<ScanDiagnosticsView | null> {
+  return apiFetch<ScanDiagnosticsView>("/api/live/scan-diagnostics/latest");
 }
 
 // --- 포지션 / 청산 매니저(read-only, dry-run) ---
