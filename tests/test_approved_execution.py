@@ -194,6 +194,80 @@ def test_execute_real_without_executor_fail_closed(tmp_path):
     assert r.real_order_placed is False and r.real_orders_placed == 0 and r.broker_order_id is None
 
 
+# --- 실 BUY 제출 워커 v1: limit/fractional + 멱등 ---
+def test_dry_run_never_submits(tmp_path):
+    s = _settings(enable_real_order_execution=True)
+    _approved(tmp_path, s)
+    r = _run(tmp_path, s, execute_real=False, executor=MockOrderExecutor())  # dry-run이면 executor 무시
+    assert r.decision == "APPROVED_READY_DRY_RUN" and r.broker_order_id is None
+    assert r.real_order_placed is False and r.real_orders_placed == 0
+
+
+def test_execute_real_blocked_without_approval(tmp_path):
+    append_snapshot(_snap(), reports_dir=tmp_path)  # 승인 없음
+    r = _run(tmp_path, _settings(enable_real_order_execution=True), execute_real=True, executor=MockOrderExecutor())
+    assert r.decision == "BLOCKED" and r.real_orders_placed == 0 and r.broker_order_id is None
+
+
+def test_limit_buy_mock_submit_succeeds(tmp_path):
+    s = _settings(enable_real_order_execution=True)
+    _approved(tmp_path, s)  # 기본 intent: limit
+    r = _run(tmp_path, s, execute_real=True, executor=MockOrderExecutor())
+    assert r.decision == "REAL_SUBMITTED" and r.order_type == "limit"
+    assert r.broker_order_id and r.broker_order_id.startswith("MOCK-")
+    assert r.environment == "test" and r.real_order_placed is False and r.real_orders_placed == 0
+
+
+def test_fractional_market_mock_submit_succeeds(tmp_path):
+    s = _settings(enable_real_order_execution=True)
+    snap = _snap()
+    append_snapshot(snap, reports_dir=tmp_path)
+    # 고가주 분수 시장가: order_type=market, dollar_amount<=100, quantity/limit None.
+    ph = compute_preview_hash(type="BUY", symbol="NVDA", side="BUY", order_type="market", quantity=None,
+                              limit_price=None, notional=100.0, account_last4="••••9372",
+                              source_intent_id="s|NVDA", strategy_id=LIVE, idempotency_key="s|NVDA")
+    req = ApprovalRequest(created_at=NOW.isoformat(), expires_at=(NOW + timedelta(minutes=10)).isoformat(),
+                          type="BUY", symbol="NVDA", side="BUY", order_type="market", quantity=None,
+                          dollar_amount=100.0, limit_price=None, notional=100.0, account_last4="••••9372",
+                          source_intent_id="s|NVDA", strategy_id=LIVE, idempotency_key="s|NVDA",
+                          preview_hash=ph, status="PENDING")
+    append_request(req, reports_dir=tmp_path)
+    append_decision(ApprovalDecision(approval_id=req.approval_id, decision="APPROVE", discord_user_id="U1",
+                                     valid=True, decided_at=NOW.isoformat()), reports_dir=tmp_path)
+    r = _run(tmp_path, s, execute_real=True, executor=MockOrderExecutor())
+    assert r.decision == "REAL_SUBMITTED" and r.order_type == "market"
+    assert r.broker_order_id and r.broker_order_id.startswith("MOCK-MKT-")
+    assert r.dollar_amount == 100.0 and r.real_orders_placed == 0
+
+
+def test_idempotency_prevents_duplicate_submit(tmp_path):
+    s = _settings(enable_real_order_execution=True)
+    _approved(tmp_path, s)
+    r1 = _run(tmp_path, s, execute_real=True, executor=MockOrderExecutor())
+    assert r1.decision == "REAL_SUBMITTED"
+    # 같은 승인/intent 재실행 → 멱등으로 차단(2차 주문 없음).
+    r2 = _run(tmp_path, s, execute_real=True, executor=MockOrderExecutor())
+    assert r2.decision == "BLOCKED" and any("idempotency" in x for x in r2.block_reasons)
+
+
+def test_over_cap_blocks(tmp_path):
+    append_snapshot(_snap(), reports_dir=tmp_path)
+    s = _settings()
+    # notional > $100 인 승인 요청을 직접 생성(라우터/생성기는 막지만 게이트 재확인을 검증).
+    ph = compute_preview_hash(type="BUY", symbol="F", side="BUY", order_type="limit", quantity=10.0,
+                              limit_price=15.0, notional=150.0, account_last4="••••9372",
+                              source_intent_id="big|F", strategy_id=LIVE, idempotency_key="big|F")
+    req = ApprovalRequest(created_at=NOW.isoformat(), expires_at=(NOW + timedelta(minutes=10)).isoformat(),
+                          type="BUY", symbol="F", side="BUY", order_type="limit", quantity=10.0, limit_price=15.0,
+                          notional=150.0, account_last4="••••9372", source_intent_id="big|F",
+                          strategy_id=LIVE, idempotency_key="big|F", preview_hash=ph, status="PENDING")
+    append_request(req, reports_dir=tmp_path)
+    append_decision(ApprovalDecision(approval_id=req.approval_id, decision="APPROVE", discord_user_id="U1",
+                                     valid=True, decided_at=NOW.isoformat()), reports_dir=tmp_path)
+    r = _run(tmp_path, s)
+    assert r.decision == "BLOCKED" and any("MAX_NOTIONAL_PER_REAL_ORDER" in x for x in r.block_reasons)
+
+
 # --- 안전 ---
 def test_no_robinhood_write_tool_in_module():
     import inspect

@@ -64,6 +64,8 @@ class OrderExecutor(Protocol):
 
     def submit_limit_buy(self, *, symbol: str, quantity: float, limit_price: float) -> dict: ...
 
+    def submit_market_buy(self, *, symbol: str, dollar_amount: float) -> dict: ...
+
 
 class RealRobinhoodOrderExecutor:
     """실 Robinhood executor 골격 — **항상 RealExecutionDisabled**(실 write 미결선).
@@ -79,6 +81,11 @@ class RealRobinhoodOrderExecutor:
             "real order execution path is not wired (scaffold). No Robinhood write tool is reachable."
         )
 
+    def submit_market_buy(self, *, symbol: str, dollar_amount: float) -> dict:
+        raise RealExecutionDisabled(
+            "real order execution path is not wired (scaffold). No Robinhood write tool is reachable."
+        )
+
 
 class MockOrderExecutor:
     """**테스트 전용** mock executor — 브로커 미접촉, 가짜 broker_order_id만 반환."""
@@ -87,6 +94,9 @@ class MockOrderExecutor:
 
     def submit_limit_buy(self, *, symbol: str, quantity: float, limit_price: float) -> dict:
         return {"broker_order_id": f"MOCK-{uuid.uuid4().hex[:12]}", "symbol": symbol}
+
+    def submit_market_buy(self, *, symbol: str, dollar_amount: float) -> dict:
+        return {"broker_order_id": f"MOCK-MKT-{uuid.uuid4().hex[:12]}", "symbol": symbol}
 
 
 # --- readiness 판정 ---
@@ -299,11 +309,15 @@ def test_proof_count(*, reports_dir: Path | None = None) -> int:
 
 
 def executed_keys(*, reports_dir: Path | None = None) -> set[str]:
-    """이미 '제출된'(MOCK_SUBMITTED) idempotency_key 집합. REAL_BLOCKED/READY는 제외(미제출)."""
+    """이미 '제출된'(MOCK_SUBMITTED/REAL_SUBMITTED) idempotency_key 집합. 멱등 — 중복 제출 차단.
+
+    BLOCKED/READY/ERROR는 제외(미제출). REAL_SUBMITTED 포함으로 승인 실행이 같은 intent를 두 번
+    제출하지 못하게 한다.
+    """
     return {
         r.idempotency_key
         for r in load_execution_receipts(limit=500, reports_dir=reports_dir)
-        if r.decision == "MOCK_SUBMITTED"
+        if r.decision in ("MOCK_SUBMITTED", "REAL_SUBMITTED")
     }
 
 
@@ -449,6 +463,7 @@ class ExecutionStatus(BaseModel):
     # Discord 승인 실행 워커(§13) 표식 — 최신 프로덕션 receipt 기준.
     latest_approval_id: str | None = None
     latest_order_type: str | None = None
+    latest_broker_order_id: str | None = None
     # test/proof(mocked 시장시간) 이력은 별도 카운트로만 노출 — 프로덕션 latest로 섞이지 않는다.
     test_proof_count: int = 0
     real_orders_placed: int = 0
@@ -477,6 +492,7 @@ def execution_status(*, settings: Settings | None = None, reports_dir: Path | No
         latest_environment=prod.environment if prod else None,
         latest_approval_id=prod.approval_id if prod else None,
         latest_order_type=prod.order_type if prod else None,
+        latest_broker_order_id=prod.broker_order_id if prod else None,
         test_proof_count=test_proof_count(reports_dir=reports_dir),
         real_orders_placed=0,
     )

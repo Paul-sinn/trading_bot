@@ -194,3 +194,18 @@
   "Discord approval is required, and all risk gates are rechecked before any order."
 - **금지**: 실주문(이 task)·매도/취소/review·옵션·재시도·Robinhood write(`mcp__robinhood…`/`place_equity_order`).
 - 현재까지: `real_orders_placed=0` 항상. dry-run은 APPROVED_READY_DRY_RUN, 실 경로는 fail-closed.
+
+## 14. 승인 실 BUY 제출 워커 v1 (limit/fractional 제출 결선 + 멱등)
+§13을 확장해 최종 BUY 제출 경로를 결선한다. `--execute-real`에서 모든 게이트가 재통과하면 **정확히 1건**만
+제출한다. 실 executor는 기본 disabled(fail-closed) — 프로덕션 `--execute-real`도 BLOCKED. 테스트는 mock만.
+
+- **제출 인터페이스**: `submit_limit_buy(symbol, quantity, limit_price)` · `submit_market_buy(symbol, dollar_amount)`
+  (Real*는 둘 다 RealExecutionDisabled, Mock은 가짜 id). 라우터 프리뷰대로 분기:
+  limit → 지정가 수량 매수, market → 분수 시장가 매수(dollar_amount ≤ $100).
+- **멱등**: `executed_keys`가 MOCK_SUBMITTED + **REAL_SUBMITTED**를 포함 → 같은 source_intent_id 2차 제출 차단
+  (재시도/2차 주문 없음).
+- **실 흔적 보존**: production·real 시장시간·non-proof REAL_SUBMITTED만 `real_order_placed=true`/`real_orders_placed=1`.
+  mock/test는 REAL_SUBMITTED라도 0 강제.
+- **API/대시보드**: `/api/live/execution-status`에 latest_broker_order_id 추가. 패널 라벨:
+  "Discord approval triggers execution only after all gates are rechecked." (승인 id·주문유형·broker_order_id 표시)
+- **금지**: 실주문(이 task)·매도/취소/review·옵션·재시도·2차 주문·Robinhood write(`mcp__robinhood…`/`place_equity_order`).

@@ -148,15 +148,22 @@ def _build_receipt(
         return _r("BLOCKED", reasons[0])
     if not execute_real:
         return _r("APPROVED_READY_DRY_RUN", "모든 게이트 통과 — dry-run, 주문 제출 없음")
-    # execute-real: executor 제출 시도(실 executor는 disabled → fail-closed).
+    # execute-real: 라우터 프리뷰대로 정확히 1건만 제출(실 executor는 disabled → fail-closed).
+    # limit → submit_limit_buy(quantity, limit_price), market → submit_market_buy(dollar_amount<=100).
     assert r is not None
     ex = executor or RealRobinhoodOrderExecutor()
+
+    def _submit() -> dict:
+        if r.order_type == "market":
+            return ex.submit_market_buy(symbol=r.symbol, dollar_amount=r.dollar_amount or r.notional or 0.0)
+        return ex.submit_limit_buy(symbol=r.symbol, quantity=r.quantity or 0.0, limit_price=r.limit_price or 0.0)
+
     if isinstance(ex, MockOrderExecutor):
-        res = ex.submit_limit_buy(symbol=r.symbol, quantity=r.quantity or 0.0, limit_price=r.limit_price or 0.0)
+        res = _submit()
         return _r("REAL_SUBMITTED", "Mock executor (test only) — no real order submitted",
                   broker_order_id=res.get("broker_order_id"), real_order_placed=True, real_orders_placed=1)
     try:
-        res = ex.submit_limit_buy(symbol=r.symbol, quantity=r.quantity or 0.0, limit_price=r.limit_price or 0.0)
+        res = _submit()
     except RealExecutionDisabled as exc:
         return _r("BLOCKED", f"실 실행 경로 미결선 (fail-closed): {exc}")
     return _r("REAL_SUBMITTED", "Real order submitted", broker_order_id=res.get("broker_order_id"),
