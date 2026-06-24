@@ -19,6 +19,7 @@ from backend.app.services.live_scan import (
     ScanEvent,
     load_scan_events,
 )
+from backend.app.services.live_universe_policy import evaluate_symbol_policy, user_policy_label, get_live_universe_entry
 
 _BEARISH_REGIMES = {"BEARISH", "PANIC", "spy_bear_vix_unknown"}
 _BULLISH_REGIMES = {"NORMAL_BULL", "NERVOUS_BULL", "spy_bull_vix_unknown"}
@@ -44,6 +45,13 @@ class SymbolDiagnostic(BaseModel):
     scan_status: str | None = None
     regime: str | None = None
     regime_source: str | None = None
+    policy_tier: str | None = None
+    policy_status: str = "unknown"
+    policy_label: str = "정책 없음: 자동매수 차단"
+    policy_reason: str = "정책에 없는 종목이라 자동매수를 차단했습니다."
+    policy_decision: str = "blocked_unknown_ticker"
+    policy_tradable: bool = False
+    approval_allowed: bool = False
 
 
 class ClosestCandidate(BaseModel):
@@ -154,6 +162,8 @@ def build_symbol_diagnostic(ev: ScanEvent) -> SymbolDiagnostic:
     reason = ev.reason or ""
     regime = feats.get("regime")
     trend = feats.get("trend")
+    policy = evaluate_symbol_policy(ev.symbol, confidence=None)
+    entry = get_live_universe_entry(ev.symbol)
     decision = "BUY_CANDIDATE" if ev.scan_status == BUY_CANDIDATE else ("ERROR" if ev.scan_status == ERROR else "SKIPPED")
     data_status = "데이터 부족/오류" if decision == "ERROR" or ev.scan_status == "INSUFFICIENT_DATA" else "정상"
     return SymbolDiagnostic(
@@ -172,6 +182,13 @@ def build_symbol_diagnostic(ev: ScanEvent) -> SymbolDiagnostic:
         scan_status=ev.scan_status,
         regime=regime,
         regime_source=ev.regime_source,
+        policy_tier=policy.tier,
+        policy_status=policy.status,
+        policy_label=user_policy_label(entry),
+        policy_reason=policy.user_reason,
+        policy_decision=policy.decision,
+        policy_tradable=policy.tradable,
+        approval_allowed=policy.approval_allowed,
     )
 
 

@@ -540,6 +540,13 @@ export interface SymbolDiagnostic {
   scan_status: string | null;
   regime: string | null;
   regime_source: string | null;
+  policy_tier: string | null;
+  policy_status: string;
+  policy_label: string;
+  policy_reason: string;
+  policy_decision: string;
+  policy_tradable: boolean;
+  approval_allowed: boolean;
 }
 
 /** backend: services/scan_diagnostics.py ScanDiagnosticsSummary. */
@@ -626,6 +633,11 @@ export interface RouterSelectedPreview {
   ask: number | null;
   last: number | null;
   spread_pct: number | null;
+  policy_tier: string | null;
+  policy_status: string | null;
+  policy_reason: string | null;
+  policy_decision: string | null;
+  risk_multiplier: number | null;
   strategy_id: string;
   source_intent_id: string;
   confidence: number | null;
@@ -658,6 +670,11 @@ export interface ApprovalView {
   limit_price: number | null;
   notional: number | null;
   account_last4: string | null;
+  policy_tier: string | null;
+  policy_status: string | null;
+  policy_reason: string | null;
+  policy_decision: string | null;
+  risk_multiplier: number | null;
   strategy_id: string;
   status: "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED" | "CANCELLED";
   expired: boolean;

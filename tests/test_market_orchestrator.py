@@ -51,10 +51,10 @@ def _blocked() -> OrderRouterResult:
 def _snap(ts=NOW) -> BrokerSnapshot:
     return BrokerSnapshot(timestamp=ts.isoformat(), account_last4="••••9372", buying_power=985.97,
                           positions=[], open_orders=[],
-                          quotes=[{"symbol": "F", "price": 14.01, "bid": 14.0, "ask": 14.01, "as_of": ts.isoformat()}])
+                          quotes=[{"symbol": "HOOD", "price": 14.01, "bid": 14.0, "ask": 14.01, "as_of": ts.isoformat()}])
 
 
-def _intent(symbol="F", key="s|F") -> OrderIntent:
+def _intent(symbol="HOOD", key="s|HOOD") -> OrderIntent:
     return OrderIntent(timestamp=NOW.isoformat(), session_id="s1", trading_mode="report_only", strategy_id=LIVE,
                        symbol=symbol, side="BUY", scan_event_key=key, mock_llm_decision="approve",
                        mock_llm_confidence=0.9, mock_llm_reason="ok", execution_gate_status="accepted_dry_run",
@@ -64,8 +64,8 @@ def _intent(symbol="F", key="s|F") -> OrderIntent:
 
 def _pending_req(tmp_path):
     req = ApprovalRequest(created_at=NOW.isoformat(), expires_at=(NOW + timedelta(minutes=10)).isoformat(),
-                          type="BUY", symbol="F", side="BUY", order_type="limit", notional=50.0,
-                          source_intent_id="p|F", strategy_id=LIVE, idempotency_key="p|F",
+                          type="BUY", symbol="HOOD", side="BUY", order_type="limit", notional=50.0,
+                          source_intent_id="p|HOOD", strategy_id=LIVE, idempotency_key="p|HOOD",
                           preview_hash="x", status="PENDING")
     append_request(req, reports_dir=tmp_path)
     return req

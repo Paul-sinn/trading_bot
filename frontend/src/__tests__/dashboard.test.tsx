@@ -36,14 +36,14 @@ const getScanDiagnosticsLatest = vi.fn().mockResolvedValue({
     risk_reduced: false,
     vix_warning: null,
     main_skip_reason: "상승 추세는 맞지만, 아직 매수 타이밍(눌림목·진입 조건)이 아닙니다.",
-    top_closest: [{ symbol: "F", signal_strength: "근접", reason: "아직 매수 타이밍이 아님" }],
+    top_closest: [{ symbol: "HOOD", signal_strength: "근접", reason: "아직 매수 타이밍이 아님" }],
     headline:
       "오늘은 시장 상태는 괜찮지만, 2개 종목 중 매수 타이밍을 통과한 종목이 없습니다. 대부분 눌림목/진입(pullback/entry) 조건을 아직 만족하지 못했습니다.",
     as_of: "2026-06-23T15:00:00+00:00",
   },
   symbols: [
     {
-      symbol: "F",
+      symbol: "HOOD",
       final_decision: "SKIPPED",
       human_reason: "상승 추세는 맞지만, 아직 매수 타이밍(눌림목·진입 조건)이 아닙니다.",
       technical_reason: "트리거 미충족: 눌림 없음(눌림 대기)",
@@ -60,6 +60,13 @@ const getScanDiagnosticsLatest = vi.fn().mockResolvedValue({
       scan_status: "SKIP",
       regime: "NORMAL_BULL",
       regime_source: "spy+vix",
+      policy_tier: "2",
+      policy_status: "approved",
+      policy_label: "실전 매수 허용",
+      policy_reason: "실전 매수 허용. Tier 2라 Tier 1보다 더 강한 신뢰도가 필요합니다.",
+      policy_decision: "allowed",
+      policy_tradable: true,
+      approval_allowed: true,
     },
   ],
 });
@@ -208,6 +215,8 @@ describe("① 대시보드 페이지", () => {
     expect(
       screen.getAllByText(/아직 매수 타이밍\(눌림목·진입 조건\)이 아닙니다/).length,
     ).toBeGreaterThan(0);
+    expect(screen.getByText("라이브 유니버스 정책")).toBeInTheDocument();
+    expect(screen.getAllByText("실전 매수 허용").length).toBeGreaterThan(0);
     // 고급(기술) 정보는 접힘 섹션(summary "고급 정보")으로 분리되어 있다.
     expect(screen.getAllByText("고급 정보").length).toBeGreaterThan(0);
   });

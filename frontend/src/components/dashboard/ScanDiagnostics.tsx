@@ -15,6 +15,28 @@ function decisionTone(d: string): string {
   return "text-neutral-400";
 }
 
+function tierLabel(tier: string | null): string {
+  if (!tier) return "정책 없음";
+  const labels: Record<string, string> = {
+    "0": "Tier 0 · 시장 확인용",
+    "1": "Tier 1 · 핵심 리더",
+    "2": "Tier 2 · 모멘텀 코어",
+    "3": "Tier 3 · 전력/인프라",
+    "4A": "Tier 4A · 방산",
+    "4B": "Tier 4B · 우주/고변동",
+    "5": "Tier 5 · 고위험 관찰",
+    "6": "Tier 6 · 크립토 베타",
+  };
+  return labels[tier] ?? `Tier ${tier}`;
+}
+
+function policyTone(d: SymbolDiagnostic): string {
+  if (d.policy_tradable && d.approval_allowed) return "text-emerald-400";
+  if (d.policy_status === "needs_review") return "text-red-400";
+  if (d.policy_status === "watch") return "text-amber-400";
+  return "text-neutral-400";
+}
+
 export function ScanDiagnosticsPanel({
   view,
 }: {
@@ -47,6 +69,8 @@ export function ScanDiagnosticsPanel({
         </div>
       ) : null}
 
+      {symbols.length > 0 ? <UniversePolicySummary symbols={symbols} /> : null}
+
       {/* 매수에 근접했던 종목 */}
       {s && s.top_closest.length > 0 ? (
         <div className="border-t border-neutral-800 pt-2">
@@ -75,6 +99,34 @@ export function ScanDiagnosticsPanel({
   );
 }
 
+function UniversePolicySummary({ symbols }: { symbols: SymbolDiagnostic[] }) {
+  const groups = [...symbols].sort((a, b) =>
+    `${a.policy_tier ?? "Z"}-${a.symbol}`.localeCompare(`${b.policy_tier ?? "Z"}-${b.symbol}`),
+  );
+  const tradable = groups.filter((d) => d.policy_tradable && d.approval_allowed).length;
+
+  return (
+    <div className="border-t border-neutral-800 pt-2">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-medium text-neutral-500">라이브 유니버스 정책</div>
+        <span className="text-xs text-neutral-500">{tradable}개 실전 매수 허용</span>
+      </div>
+      <div className="mt-1 grid gap-1 sm:grid-cols-2">
+        {groups.map((d) => (
+          <div key={`${d.symbol}-policy`} className="rounded-md border border-neutral-800 px-2 py-1.5">
+            <div className="flex items-center gap-x-2">
+              <span className="font-mono text-xs font-semibold text-white">{d.symbol}</span>
+              <span className="text-[11px] text-neutral-500">{tierLabel(d.policy_tier)}</span>
+              <span className={`ml-auto text-[11px] font-medium ${policyTone(d)}`}>{d.policy_label}</span>
+            </div>
+            <div className="mt-0.5 truncate text-[11px] text-neutral-400">{d.policy_reason}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SymbolCard({ d }: { d: SymbolDiagnostic }) {
   return (
     <div className="rounded-md border border-neutral-800 px-3 py-2">
@@ -83,11 +135,13 @@ function SymbolCard({ d }: { d: SymbolDiagnostic }) {
         <span className={`text-xs font-semibold ${decisionTone(d.final_decision)}`}>
           {DECISION_LABEL[d.final_decision] ?? d.final_decision}
         </span>
+        <span className={`text-xs font-semibold ${policyTone(d)}`}>{d.policy_label}</span>
         <span className="ml-auto text-xs text-neutral-500">
           {d.price != null ? `$${d.price}` : "—"} · 신호 {d.signal_strength}
         </span>
       </div>
       <div className="mt-1 text-xs text-neutral-300">{d.human_reason}</div>
+      <div className="mt-0.5 text-xs text-neutral-500">{tierLabel(d.policy_tier)} · {d.policy_reason}</div>
 
       {/* 고급 정보(접힘) — 기술 필드 분리 */}
       <details className="mt-1">
@@ -99,6 +153,7 @@ function SymbolCard({ d }: { d: SymbolDiagnostic }) {
           <span>거래량: {d.volume_status}</span>
           <span>레짐: {d.regime_status}</span>
           <span>데이터: {d.data_status}</span>
+          <span>정책: {d.policy_status}/{d.policy_decision}</span>
           <span className="col-span-2 font-mono sm:col-span-3">
             technical: {d.technical_reason} · scan={d.scan_status} · regime={d.regime}/{d.regime_source}
           </span>

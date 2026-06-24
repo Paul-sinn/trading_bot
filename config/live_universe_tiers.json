@@ -1,0 +1,125 @@
+{
+  "_meta": {
+    "kind": "live_universe_tier_policy_v1",
+    "purpose": "Router allow/block policy for supervised live BUY candidates. Diagnostics may still display blocked/watch names.",
+    "safety": "Tier 0, watch, needs_review, unknown, and tier 3+ approved names are not live-tradable by default.",
+    "as_of": "2026-06-24"
+  },
+  "tier_rules": {
+    "0": {
+      "label_ko": "레짐 확인용: 매매 안 함",
+      "default_tradable": false,
+      "default_approval_allowed": false
+    },
+    "1": {
+      "label_ko": "실전 매수 허용",
+      "default_tradable": true,
+      "default_approval_allowed": true,
+      "risk_multiplier": 1.0
+    },
+    "2": {
+      "label_ko": "실전 매수 허용",
+      "default_tradable": true,
+      "default_approval_allowed": true,
+      "risk_multiplier": 0.75,
+      "min_confidence": 0.85
+    },
+    "3": {
+      "label_ko": "승인 목록이지만 자동매수 비활성",
+      "default_tradable": false,
+      "default_approval_allowed": false
+    },
+    "4A": {
+      "label_ko": "승인 목록이지만 자동매수 비활성",
+      "default_tradable": false,
+      "default_approval_allowed": false
+    },
+    "4B": {
+      "label_ko": "관찰만: 자동매수 금지",
+      "default_tradable": false,
+      "default_approval_allowed": false
+    },
+    "5": {
+      "label_ko": "관찰만: 자동매수 금지",
+      "default_tradable": false,
+      "default_approval_allowed": false
+    },
+    "6": {
+      "label_ko": "크립토 베타: 주 티어 승인 종목만 허용",
+      "default_tradable": false,
+      "default_approval_allowed": false
+    }
+  },
+  "tickers": [
+    {"ticker": "SPY", "tier": "0", "status": "compass_only", "tradable": false, "approval_allowed": false, "role": "market compass", "category": "broad_market", "reason": "레짐 확인용: 매매 안 함", "risk_multiplier": 0.0},
+    {"ticker": "QQQ", "tier": "0", "status": "compass_only", "tradable": false, "approval_allowed": false, "role": "market compass", "category": "nasdaq", "reason": "레짐 확인용: 매매 안 함", "risk_multiplier": 0.0},
+    {"ticker": "SMH", "tier": "0", "status": "compass_only", "tradable": false, "approval_allowed": false, "role": "semiconductor compass", "category": "sector_etf", "reason": "레짐 확인용: 매매 안 함", "risk_multiplier": 0.0},
+    {"ticker": "SOXX", "tier": "0", "status": "compass_only", "tradable": false, "approval_allowed": false, "role": "semiconductor compass", "category": "sector_etf", "reason": "레짐 확인용: 매매 안 함", "risk_multiplier": 0.0},
+    {"ticker": "XLK", "tier": "0", "status": "compass_only", "tradable": false, "approval_allowed": false, "role": "tech sector compass", "category": "sector_etf", "reason": "레짐 확인용: 매매 안 함", "risk_multiplier": 0.0},
+    {"ticker": "$VIX", "tier": "0", "status": "compass_only", "tradable": false, "approval_allowed": false, "role": "volatility compass", "category": "index", "reason": "레짐 확인용: 매매 안 함", "risk_multiplier": 0.0},
+
+    {"ticker": "NVDA", "tier": "1", "status": "approved", "tradable": true, "approval_allowed": true, "role": "primary tradable leader", "category": "ai_semiconductor", "reason": "실전 매수 허용", "risk_multiplier": 1.0},
+    {"ticker": "AVGO", "tier": "1", "status": "approved", "tradable": true, "approval_allowed": true, "role": "primary tradable leader", "category": "ai_semiconductor", "reason": "실전 매수 허용", "risk_multiplier": 1.0},
+    {"ticker": "AMD", "tier": "1", "status": "approved", "tradable": true, "approval_allowed": true, "role": "primary tradable leader", "category": "ai_semiconductor", "reason": "실전 매수 허용", "risk_multiplier": 1.0},
+    {"ticker": "MSFT", "tier": "1", "status": "approved", "tradable": true, "approval_allowed": true, "role": "primary tradable leader", "category": "megacap_software", "reason": "실전 매수 허용", "risk_multiplier": 1.0},
+    {"ticker": "META", "tier": "1", "status": "approved", "tradable": true, "approval_allowed": true, "role": "primary tradable leader", "category": "megacap_platform", "reason": "실전 매수 허용", "risk_multiplier": 1.0},
+    {"ticker": "GOOGL", "tier": "1", "status": "approved", "tradable": true, "approval_allowed": true, "role": "primary tradable leader", "category": "megacap_platform", "reason": "실전 매수 허용", "risk_multiplier": 1.0},
+    {"ticker": "AMZN", "tier": "1", "status": "approved", "tradable": true, "approval_allowed": true, "role": "primary tradable leader", "category": "megacap_platform", "reason": "실전 매수 허용", "risk_multiplier": 1.0},
+    {"ticker": "AAPL", "tier": "1", "status": "approved", "tradable": true, "approval_allowed": true, "role": "primary tradable leader", "category": "megacap_hardware", "reason": "실전 매수 허용", "risk_multiplier": 1.0},
+
+    {"ticker": "PLTR", "tier": "2", "status": "approved", "tradable": true, "approval_allowed": true, "role": "liquid momentum core", "category": "ai_software", "reason": "실전 매수 허용. Tier 2라 Tier 1보다 더 강한 신뢰도가 필요합니다.", "risk_multiplier": 0.75},
+    {"ticker": "COIN", "tier": "2", "secondary_tiers": ["6"], "status": "approved", "tradable": true, "approval_allowed": true, "role": "liquid momentum core; crypto beta", "category": "crypto_beta", "reason": "실전 매수 허용. Tier 2 승인 종목이라 크립토 베타 태그가 함께 허용됩니다.", "risk_multiplier": 0.75},
+    {"ticker": "HOOD", "tier": "2", "secondary_tiers": ["6"], "status": "approved", "tradable": true, "approval_allowed": true, "role": "liquid momentum core; crypto beta", "category": "crypto_beta", "reason": "실전 매수 허용. Tier 2 승인 종목이라 크립토 베타 태그가 함께 허용됩니다.", "risk_multiplier": 0.75},
+    {"ticker": "VRT", "tier": "2", "status": "approved", "tradable": true, "approval_allowed": true, "role": "liquid momentum core", "category": "ai_power_infra", "reason": "실전 매수 허용. Tier 2라 Tier 1보다 더 강한 신뢰도가 필요합니다.", "risk_multiplier": 0.75},
+    {"ticker": "CRWD", "tier": "2", "status": "approved", "tradable": true, "approval_allowed": true, "role": "liquid momentum core", "category": "cybersecurity", "reason": "실전 매수 허용. Tier 2라 Tier 1보다 더 강한 신뢰도가 필요합니다.", "risk_multiplier": 0.75},
+    {"ticker": "MU", "tier": "2", "status": "approved", "tradable": true, "approval_allowed": true, "role": "liquid momentum core", "category": "memory_semiconductor", "reason": "실전 매수 허용. Tier 2라 Tier 1보다 더 강한 신뢰도가 필요합니다.", "risk_multiplier": 0.75},
+    {"ticker": "DDOG", "tier": "2", "status": "approved", "tradable": true, "approval_allowed": true, "role": "liquid momentum core", "category": "software", "reason": "실전 매수 허용. Tier 2라 Tier 1보다 더 강한 신뢰도가 필요합니다.", "risk_multiplier": 0.75},
+    {"ticker": "SNOW", "tier": "2", "status": "approved", "tradable": true, "approval_allowed": true, "role": "liquid momentum core", "category": "software", "reason": "실전 매수 허용. Tier 2라 Tier 1보다 더 강한 신뢰도가 필요합니다.", "risk_multiplier": 0.75},
+    {"ticker": "TSM", "tier": "2", "status": "approved", "tradable": true, "approval_allowed": true, "role": "liquid momentum core", "category": "semiconductor_adr", "reason": "실전 매수 허용. Tier 2라 Tier 1보다 더 강한 신뢰도가 필요합니다.", "risk_multiplier": 0.75},
+    {"ticker": "ASML", "tier": "2", "status": "approved", "tradable": true, "approval_allowed": true, "role": "liquid momentum core", "category": "semiconductor_adr", "reason": "실전 매수 허용. Tier 2라 Tier 1보다 더 강한 신뢰도가 필요합니다.", "risk_multiplier": 0.75},
+    {"ticker": "ARM", "tier": "2", "status": "watch", "tradable": false, "approval_allowed": false, "role": "watch only", "category": "semiconductor", "reason": "관찰만: 자동매수 금지", "risk_multiplier": 0.0},
+    {"ticker": "NET", "tier": "2", "status": "watch", "tradable": false, "approval_allowed": false, "role": "watch only", "category": "software", "reason": "관찰만: 자동매수 금지", "risk_multiplier": 0.0},
+    {"ticker": "HIMS", "tier": "2", "status": "watch", "tradable": false, "approval_allowed": false, "role": "watch only", "category": "consumer_health", "reason": "관찰만: 자동매수 금지", "risk_multiplier": 0.0},
+    {"ticker": "MDB", "tier": "2", "status": "watch", "tradable": false, "approval_allowed": false, "role": "watch only", "category": "software", "reason": "관찰만: 자동매수 금지", "risk_multiplier": 0.0},
+    {"ticker": "SMCI", "tier": "2", "status": "needs_review", "tradable": false, "approval_allowed": false, "role": "blocked pending review", "category": "ai_hardware", "reason": "검토 필요: 자동매수 차단", "risk_multiplier": 0.0},
+
+    {"ticker": "ETN", "tier": "3", "status": "approved", "tradable": false, "approval_allowed": false, "role": "approved but disabled", "category": "power_infra", "reason": "승인 목록이지만 Tier 3+는 아직 자동매수 비활성입니다.", "risk_multiplier": 0.0},
+    {"ticker": "CEG", "tier": "3", "status": "approved", "tradable": false, "approval_allowed": false, "role": "approved but disabled", "category": "power_infra", "reason": "승인 목록이지만 Tier 3+는 아직 자동매수 비활성입니다.", "risk_multiplier": 0.0},
+    {"ticker": "NRG", "tier": "3", "status": "approved", "tradable": false, "approval_allowed": false, "role": "approved but disabled", "category": "power_infra", "reason": "승인 목록이지만 Tier 3+는 아직 자동매수 비활성입니다.", "risk_multiplier": 0.0},
+    {"ticker": "PWR", "tier": "3", "status": "approved", "tradable": false, "approval_allowed": false, "role": "approved but disabled", "category": "power_infra", "reason": "승인 목록이지만 Tier 3+는 아직 자동매수 비활성입니다.", "risk_multiplier": 0.0},
+    {"ticker": "EME", "tier": "3", "status": "approved", "tradable": false, "approval_allowed": false, "role": "approved but disabled", "category": "power_infra", "reason": "승인 목록이지만 Tier 3+는 아직 자동매수 비활성입니다.", "risk_multiplier": 0.0},
+    {"ticker": "FIX", "tier": "3", "status": "approved", "tradable": false, "approval_allowed": false, "role": "approved but disabled", "category": "power_infra", "reason": "승인 목록이지만 Tier 3+는 아직 자동매수 비활성입니다.", "risk_multiplier": 0.0},
+    {"ticker": "DOV", "tier": "3", "status": "approved", "tradable": false, "approval_allowed": false, "role": "approved but disabled", "category": "industrial", "reason": "승인 목록이지만 Tier 3+는 아직 자동매수 비활성입니다.", "risk_multiplier": 0.0},
+    {"ticker": "GEV", "tier": "3", "status": "watch", "tradable": false, "approval_allowed": false, "role": "watch only", "category": "power_infra", "reason": "관찰만: 자동매수 금지", "risk_multiplier": 0.0},
+
+    {"ticker": "LMT", "tier": "4A", "status": "approved", "tradable": false, "approval_allowed": false, "role": "approved but disabled", "category": "defense", "reason": "승인 목록이지만 Tier 3+는 아직 자동매수 비활성입니다.", "risk_multiplier": 0.0},
+    {"ticker": "RTX", "tier": "4A", "status": "approved", "tradable": false, "approval_allowed": false, "role": "approved but disabled", "category": "defense", "reason": "승인 목록이지만 Tier 3+는 아직 자동매수 비활성입니다.", "risk_multiplier": 0.0},
+    {"ticker": "NOC", "tier": "4A", "status": "approved", "tradable": false, "approval_allowed": false, "role": "approved but disabled", "category": "defense", "reason": "승인 목록이지만 Tier 3+는 아직 자동매수 비활성입니다.", "risk_multiplier": 0.0},
+    {"ticker": "GD", "tier": "4A", "status": "approved", "tradable": false, "approval_allowed": false, "role": "approved but disabled", "category": "defense", "reason": "승인 목록이지만 Tier 3+는 아직 자동매수 비활성입니다.", "risk_multiplier": 0.0},
+    {"ticker": "BA", "tier": "4A", "status": "watch", "tradable": false, "approval_allowed": false, "role": "watch only", "category": "aerospace", "reason": "관찰만: 자동매수 금지", "risk_multiplier": 0.0},
+
+    {"ticker": "RKLB", "tier": "4B", "status": "watch", "tradable": false, "approval_allowed": false, "role": "watch only", "category": "space_high_vol", "reason": "관찰만: 자동매수 금지", "risk_multiplier": 0.0},
+    {"ticker": "ASTS", "tier": "4B", "status": "watch", "tradable": false, "approval_allowed": false, "role": "watch only", "category": "space_high_vol", "reason": "관찰만: 자동매수 금지", "risk_multiplier": 0.0},
+    {"ticker": "PL", "tier": "4B", "status": "watch", "tradable": false, "approval_allowed": false, "role": "watch only", "category": "space_high_vol", "reason": "관찰만: 자동매수 금지", "risk_multiplier": 0.0},
+    {"ticker": "SPCX", "tier": "4B", "status": "needs_review", "tradable": false, "approval_allowed": false, "role": "blocked pending review", "category": "space_high_vol", "reason": "검토 필요: 자동매수 차단", "risk_multiplier": 0.0},
+    {"ticker": "LUNR", "tier": "4B", "status": "needs_review", "tradable": false, "approval_allowed": false, "role": "blocked pending review", "category": "space_high_vol", "reason": "검토 필요: 자동매수 차단", "risk_multiplier": 0.0},
+
+    {"ticker": "IONQ", "tier": "5", "status": "watch", "tradable": false, "approval_allowed": false, "role": "watch only", "category": "speculative", "reason": "관찰만: 자동매수 금지", "risk_multiplier": 0.0},
+    {"ticker": "RGTI", "tier": "5", "status": "watch", "tradable": false, "approval_allowed": false, "role": "watch only", "category": "speculative", "reason": "관찰만: 자동매수 금지", "risk_multiplier": 0.0},
+    {"ticker": "QBTS", "tier": "5", "status": "watch", "tradable": false, "approval_allowed": false, "role": "watch only", "category": "speculative", "reason": "관찰만: 자동매수 금지", "risk_multiplier": 0.0},
+    {"ticker": "SOUN", "tier": "5", "status": "watch", "tradable": false, "approval_allowed": false, "role": "watch only", "category": "speculative", "reason": "관찰만: 자동매수 금지", "risk_multiplier": 0.0},
+    {"ticker": "PATH", "tier": "5", "status": "watch", "tradable": false, "approval_allowed": false, "role": "watch only", "category": "speculative", "reason": "관찰만: 자동매수 금지", "risk_multiplier": 0.0},
+    {"ticker": "APLD", "tier": "5", "status": "watch", "tradable": false, "approval_allowed": false, "role": "watch only", "category": "speculative", "reason": "관찰만: 자동매수 금지", "risk_multiplier": 0.0},
+    {"ticker": "IREN", "tier": "5", "secondary_tiers": ["6"], "status": "watch", "tradable": false, "approval_allowed": false, "role": "watch only; crypto beta", "category": "crypto_beta", "reason": "관찰만: 자동매수 금지", "risk_multiplier": 0.0},
+    {"ticker": "CORZ", "tier": "5", "secondary_tiers": ["6"], "status": "watch", "tradable": false, "approval_allowed": false, "role": "watch only; crypto beta", "category": "crypto_beta", "reason": "관찰만: 자동매수 금지", "risk_multiplier": 0.0},
+    {"ticker": "BBAI", "tier": "5", "status": "needs_review", "tradable": false, "approval_allowed": false, "role": "blocked pending review", "category": "speculative", "reason": "검토 필요: 자동매수 차단", "risk_multiplier": 0.0},
+    {"ticker": "AI", "tier": "5", "status": "needs_review", "tradable": false, "approval_allowed": false, "role": "blocked pending review", "category": "speculative", "reason": "검토 필요: 자동매수 차단", "risk_multiplier": 0.0},
+    {"ticker": "SYM", "tier": "5", "status": "needs_review", "tradable": false, "approval_allowed": false, "role": "blocked pending review", "category": "speculative", "reason": "검토 필요: 자동매수 차단", "risk_multiplier": 0.0},
+    {"ticker": "SERV", "tier": "5", "status": "needs_review", "tradable": false, "approval_allowed": false, "role": "blocked pending review", "category": "speculative", "reason": "검토 필요: 자동매수 차단", "risk_multiplier": 0.0},
+
+    {"ticker": "MSTR", "tier": "6", "status": "watch", "tradable": false, "approval_allowed": false, "role": "watch only", "category": "crypto_beta", "reason": "관찰만: 자동매수 금지", "risk_multiplier": 0.0},
+    {"ticker": "MARA", "tier": "6", "status": "watch", "tradable": false, "approval_allowed": false, "role": "watch only", "category": "crypto_beta", "reason": "관찰만: 자동매수 금지", "risk_multiplier": 0.0},
+    {"ticker": "RIOT", "tier": "6", "status": "watch", "tradable": false, "approval_allowed": false, "role": "watch only", "category": "crypto_beta", "reason": "관찰만: 자동매수 금지", "risk_multiplier": 0.0},
+    {"ticker": "CLSK", "tier": "6", "status": "watch", "tradable": false, "approval_allowed": false, "role": "watch only", "category": "crypto_beta", "reason": "관찰만: 자동매수 금지", "risk_multiplier": 0.0}
+  ]
+}

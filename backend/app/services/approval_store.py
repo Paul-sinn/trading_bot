@@ -65,6 +65,11 @@ class ApprovalRequest(BaseModel):
     ask: float | None = None
     last: float | None = None
     spread_pct: float | None = None
+    policy_tier: str | None = None
+    policy_status: str | None = None
+    policy_reason: str | None = None
+    policy_decision: str | None = None
+    risk_multiplier: float | None = None
     source_intent_id: str
     strategy_id: str
     idempotency_key: str
@@ -244,6 +249,11 @@ class ApprovalView(BaseModel):
     ask: float | None = None
     last: float | None = None
     spread_pct: float | None = None
+    policy_tier: str | None = None
+    policy_status: str | None = None
+    policy_reason: str | None = None
+    policy_decision: str | None = None
+    risk_multiplier: float | None = None
     strategy_id: str
     status: ApprovalStatus
     expired: bool
@@ -263,7 +273,10 @@ def to_view(req: ApprovalRequest, *, reports_dir: Path | None = None, now: datet
         type=req.type, symbol=req.symbol, side=req.side, order_type=req.order_type,
         quantity=req.quantity, dollar_amount=req.dollar_amount, limit_price=req.limit_price,
         notional=req.notional, account_last4=req.account_last4,
-        bid=req.bid, ask=req.ask, last=req.last, spread_pct=req.spread_pct, strategy_id=req.strategy_id,
+        bid=req.bid, ask=req.ask, last=req.last, spread_pct=req.spread_pct,
+        policy_tier=req.policy_tier, policy_status=req.policy_status, policy_reason=req.policy_reason,
+        policy_decision=req.policy_decision, risk_multiplier=req.risk_multiplier,
+        strategy_id=req.strategy_id,
         status=status, expired=_is_expired(req, now=now), reason=req.reason,
         approve_command=f"!approve {req.approval_id}", reject_command=f"!reject {req.approval_id}",
         decided_by=(last.discord_username or last.discord_user_id) if last else None,
@@ -294,6 +307,11 @@ def create_approval_request(
     ask: float | None = None,
     last: float | None = None,
     spread_pct: float | None = None,
+    policy_tier: str | None = None,
+    policy_status: str | None = None,
+    policy_reason: str | None = None,
+    policy_decision: str | None = None,
+    risk_multiplier: float | None = None,
 ) -> ApprovalRequest:
     """READY 상태 실주문 intent로 승인 요청을 만들어 append + Discord 전송한다(주문 아님).
 
@@ -323,6 +341,8 @@ def create_approval_request(
         type=type, symbol=intent.symbol, side=intent.side, order_type=intent.planned_order_type,
         quantity=intent.planned_quantity, dollar_amount=notional, limit_price=intent.planned_limit_price,
         notional=notional, account_last4=account_last4, bid=bid, ask=ask, last=last, spread_pct=spread_pct,
+        policy_tier=policy_tier, policy_status=policy_status, policy_reason=policy_reason,
+        policy_decision=policy_decision, risk_multiplier=risk_multiplier,
         source_intent_id=intent.scan_event_key,
         strategy_id=intent.strategy_id, idempotency_key=intent.scan_event_key, preview_hash=preview_hash,
     )

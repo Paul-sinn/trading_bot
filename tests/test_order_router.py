@@ -26,7 +26,7 @@ NOW = datetime(2026, 6, 23, 15, 0, 0, tzinfo=timezone.utc)  # 평일 장중
 LIVE = Settings().live_strategy_id
 
 
-def _intent(symbol="F", strategy_id=LIVE, conf=0.9, side="BUY", decision="approve",
+def _intent(symbol="HOOD", strategy_id=LIVE, conf=0.9, side="BUY", decision="approve",
             gate="accepted_dry_run", key=None, notional=50.0, limit=14.0) -> OrderIntent:
     return OrderIntent(
         timestamp="2026-06-23T14:00:00+00:00", session_id="s1", trading_mode="report_only",
@@ -65,82 +65,82 @@ def _route(intents, snap, settings=None, *, reports_dir, market_open=True):
 # --- 선택 규칙 ---
 def test_selects_only_strategy_intent(tmp_path):
     intents = [_intent(symbol="AAA", strategy_id="manual-test", key="m|AAA"),
-               _intent(symbol="F", strategy_id=LIVE, key="s|F")]
-    r = _route(intents, _snap([_q("AAA", bid=10, ask=10.01), _q("F", bid=14.0, ask=14.01)]), reports_dir=tmp_path)
+               _intent(symbol="HOOD", strategy_id=LIVE, key="s|HOOD")]
+    r = _route(intents, _snap([_q("AAA", bid=10, ask=10.01), _q("HOOD", bid=14.0, ask=14.01)]), reports_dir=tmp_path)
     assert r.decision == "ROUTER_SELECTED"
-    assert r.selected.symbol == "F" and r.selected.strategy_id == LIVE
+    assert r.selected.symbol == "HOOD" and r.selected.strategy_id == LIVE
 
 
 def test_test_only_intent_rejected(tmp_path):
-    r = _route([_intent(strategy_id="manual-test", key="m|F")],
-               _snap([_q("F", bid=14.0, ask=14.01)]), reports_dir=tmp_path)
+    r = _route([_intent(strategy_id="manual-test", key="m|HOOD")],
+               _snap([_q("HOOD", bid=14.0, ask=14.01)]), reports_dir=tmp_path)
     assert r.decision == "ROUTER_BLOCKED" and "자격" in r.reason
 
 
 def test_non_buy_rejected(tmp_path):
-    r = _route([_intent(side="SELL", key="s|F|sell")], _snap([_q("F", bid=14.0, ask=14.01)]), reports_dir=tmp_path)
+    r = _route([_intent(side="SELL", key="s|HOOD|sell")], _snap([_q("HOOD", bid=14.0, ask=14.01)]), reports_dir=tmp_path)
     assert r.decision == "ROUTER_BLOCKED"
 
 
 def test_unapproved_review_rejected(tmp_path):
-    r = _route([_intent(decision="veto", key="s|F|veto")], _snap([_q("F", bid=14.0, ask=14.01)]), reports_dir=tmp_path)
+    r = _route([_intent(decision="veto", key="s|HOOD|veto")], _snap([_q("HOOD", bid=14.0, ask=14.01)]), reports_dir=tmp_path)
     assert r.decision == "ROUTER_BLOCKED"
 
 
 # --- 글로벌 차단 ---
 def test_daily_real_cap_blocks(tmp_path):
     append_execution_receipt(
-        RealExecutionReceipt(intent_id="x", idempotency_key="x", symbol="F", side="BUY", decision="REAL_SUBMITTED",
+        RealExecutionReceipt(intent_id="x", idempotency_key="x", symbol="HOOD", side="BUY", decision="REAL_SUBMITTED",
                              limit_price=14.0, notional=14.0, quantity=1.0, environment="production",
                              market_hours_source="real", is_proof_run=False, broker_order_id="RH-1",
                              real_order_placed=True, real_orders_placed=1, timestamp=NOW.isoformat()),
         reports_dir=tmp_path)
-    r = _route([_intent(key="s|F")], _snap([_q("F", bid=14.0, ask=14.01)]), reports_dir=tmp_path)
+    r = _route([_intent(key="s|HOOD")], _snap([_q("HOOD", bid=14.0, ask=14.01)]), reports_dir=tmp_path)
     assert r.decision == "ROUTER_BLOCKED" and any("MAX_REAL_ORDERS_PER_DAY" in x for x in r.block_reasons)
 
 
 def test_daily_approval_request_cap_blocks(tmp_path):
     # 첫 라우팅 성공 → 요청 1건. 두번째는 일일 승인요청 캡(1)에 막힘.
     s = _settings()
-    r1 = _route([_intent(symbol="F", key="s|F")], _snap([_q("F", bid=14.0, ask=14.01)]), s, reports_dir=tmp_path)
+    r1 = _route([_intent(symbol="HOOD", key="s|HOOD")], _snap([_q("HOOD", bid=14.0, ask=14.01)]), s, reports_dir=tmp_path)
     assert r1.decision == "ROUTER_SELECTED"
     r2 = _route([_intent(symbol="MSFT", key="s|MSFT")], _snap([_q("MSFT", bid=20.0, ask=20.01)]), s, reports_dir=tmp_path)
     assert r2.decision == "ROUTER_BLOCKED" and any("DAILY_MAX_APPROVAL" in x for x in r2.block_reasons)
 
 
 def test_stale_snapshot_blocks(tmp_path):
-    stale = _snap([_q("F", bid=14.0, ask=14.01)], ts=NOW - timedelta(seconds=7200))
-    r = _route([_intent(key="s|F")], stale, reports_dir=tmp_path)
+    stale = _snap([_q("HOOD", bid=14.0, ask=14.01)], ts=NOW - timedelta(seconds=7200))
+    r = _route([_intent(key="s|HOOD")], stale, reports_dir=tmp_path)
     assert r.decision == "ROUTER_BLOCKED" and any("stale" in x for x in r.block_reasons)
 
 
 def test_market_closed_blocks(tmp_path):
-    r = _route([_intent(key="s|F")], _snap([_q("F", bid=14.0, ask=14.01)]), reports_dir=tmp_path, market_open=False)
+    r = _route([_intent(key="s|HOOD")], _snap([_q("HOOD", bid=14.0, ask=14.01)]), reports_dir=tmp_path, market_open=False)
     assert r.decision == "ROUTER_BLOCKED" and any("장시간" in x for x in r.block_reasons)
 
 
 # --- 호가 차단 ---
 def test_stale_quote_blocks(tmp_path):
-    snap = _snap([_q("F", bid=14.0, ask=14.01, as_of=NOW - timedelta(seconds=600))])
-    r = _route([_intent(key="s|F")], snap, reports_dir=tmp_path)
+    snap = _snap([_q("HOOD", bid=14.0, ask=14.01, as_of=NOW - timedelta(seconds=600))])
+    r = _route([_intent(key="s|HOOD")], snap, reports_dir=tmp_path)
     assert r.decision == "ROUTER_BLOCKED"  # 호가 stale → 자격 후보 없음
 
 
 def test_missing_quote_blocks(tmp_path):
-    r = _route([_intent(symbol="F", key="s|F")], _snap([_q("ZZZ", bid=10, ask=10.01)]), reports_dir=tmp_path)
+    r = _route([_intent(symbol="HOOD", key="s|HOOD")], _snap([_q("ZZZ", bid=10, ask=10.01)]), reports_dir=tmp_path)
     assert r.decision == "ROUTER_BLOCKED"
 
 
 def test_wide_spread_blocks(tmp_path):
-    snap = _snap([_q("F", bid=14.0, ask=14.50)])  # 스프레드 ~3.5% >> 0.3%
-    r = _route([_intent(key="s|F")], snap, reports_dir=tmp_path)
+    snap = _snap([_q("HOOD", bid=14.0, ask=14.50)])  # 스프레드 ~3.5% >> 0.3%
+    r = _route([_intent(key="s|HOOD")], snap, reports_dir=tmp_path)
     assert r.decision == "ROUTER_BLOCKED"
 
 
 # --- 주문유형 정책 ---
 def test_cheap_stock_limit_preview(tmp_path):
-    r = _route([_intent(symbol="F", limit=14.0, key="s|F")],
-               _snap([_q("F", bid=14.0, ask=14.01)]), reports_dir=tmp_path)
+    r = _route([_intent(symbol="HOOD", limit=14.0, key="s|HOOD")],
+               _snap([_q("HOOD", bid=14.0, ask=14.01)]), reports_dir=tmp_path)
     assert r.decision == "ROUTER_SELECTED"
     p = r.selected
     assert p.order_type == "limit" and p.limit_price is not None and p.quantity >= 1
@@ -171,7 +171,7 @@ def test_fractional_blocked_low_confidence(tmp_path):
 
 # --- 승인 요청 생성 + preview_hash ---
 def test_approval_request_created_correctly(tmp_path):
-    r = _route([_intent(symbol="F", key="s|F")], _snap([_q("F", bid=14.0, ask=14.01)]), reports_dir=tmp_path)
+    r = _route([_intent(symbol="HOOD", key="s|HOOD")], _snap([_q("HOOD", bid=14.0, ask=14.01)]), reports_dir=tmp_path)
     assert r.decision == "ROUTER_SELECTED" and r.approval_id
     req = get_request(r.approval_id, reports_dir=tmp_path)
     assert req is not None and req.type == "BUY" and req.side == "BUY"
@@ -179,12 +179,14 @@ def test_approval_request_created_correctly(tmp_path):
     assert req.status == "PENDING" and req.broker_order_id is None
     assert req.preview_hash and len(req.preview_hash) == 64
     assert req.bid == 14.0 and req.ask == 14.01 and req.spread_pct is not None
+    assert req.policy_tier == "2" and req.policy_status == "approved"
+    assert req.policy_decision == "allowed" and "실전 매수 허용" in (req.policy_reason or "")
 
 
 def test_preview_hash_changes_with_preview(tmp_path):
     s = _settings(order_router_daily_max_approval_requests=5)
-    r1 = _route([_intent(symbol="F", key="s|F")], _snap([_q("F", bid=14.0, ask=14.01)]), s, reports_dir=tmp_path)
-    r2 = _route([_intent(symbol="T", key="s|T")], _snap([_q("T", bid=20.0, ask=20.01)]), s, reports_dir=tmp_path)
+    r1 = _route([_intent(symbol="HOOD", key="s|HOOD")], _snap([_q("HOOD", bid=14.0, ask=14.01)]), s, reports_dir=tmp_path)
+    r2 = _route([_intent(symbol="AAPL", key="s|AAPL")], _snap([_q("AAPL", bid=20.0, ask=20.01)]), s, reports_dir=tmp_path)
     h1 = get_request(r1.approval_id, reports_dir=tmp_path).preview_hash
     h2 = get_request(r2.approval_id, reports_dir=tmp_path).preview_hash
     assert h1 != h2
@@ -192,22 +194,78 @@ def test_preview_hash_changes_with_preview(tmp_path):
 
 def test_duplicate_intent_not_re_requested(tmp_path):
     s = _settings(order_router_daily_max_approval_requests=5)
-    r1 = _route([_intent(symbol="F", key="dup|F")], _snap([_q("F", bid=14.0, ask=14.01)]), s, reports_dir=tmp_path)
+    r1 = _route([_intent(symbol="HOOD", key="dup|HOOD")], _snap([_q("HOOD", bid=14.0, ask=14.01)]), s, reports_dir=tmp_path)
     assert r1.decision == "ROUTER_SELECTED"
     # 같은 intent 재라우팅 → 이미 승인요청 존재로 자격 제외 → 후보 없음
-    r2 = _route([_intent(symbol="F", key="dup|F")], _snap([_q("F", bid=14.0, ask=14.01)]), s, reports_dir=tmp_path)
+    r2 = _route([_intent(symbol="HOOD", key="dup|HOOD")], _snap([_q("HOOD", bid=14.0, ask=14.01)]), s, reports_dir=tmp_path)
     assert r2.decision == "ROUTER_BLOCKED"
 
 
 # --- Discord 승인 필수 + 실주문 0 ---
 def test_router_only_requests_no_submit(tmp_path):
-    r = _route([_intent(symbol="F", key="s|F")], _snap([_q("F", bid=14.0, ask=14.01)]), reports_dir=tmp_path)
+    r = _route([_intent(symbol="HOOD", key="s|HOOD")], _snap([_q("HOOD", bid=14.0, ask=14.01)]), reports_dir=tmp_path)
     assert r.decision == "ROUTER_SELECTED"
     req = get_request(r.approval_id, reports_dir=tmp_path)
     assert req.status == "PENDING"  # 승인 대기 — 제출 안 됨
     assert r.real_orders_placed == 0
     # 실행 영수증 파일 없음(라우터는 주문/실행을 만들지 않음)
     assert not (tmp_path / "real_execution_receipts.jsonl").exists()
+
+
+# --- 라이브 유니버스 정책 ---
+def test_tier0_never_creates_approval_request(tmp_path):
+    r = _route([_intent(symbol="SPY", key="s|SPY")], _snap([_q("SPY", bid=600.0, ask=600.1)]), reports_dir=tmp_path)
+    assert r.decision == "ROUTER_BLOCKED"
+    assert not (tmp_path / "approval_requests.jsonl").exists()
+
+
+def test_watch_never_creates_approval_request(tmp_path):
+    r = _route([_intent(symbol="ARM", key="s|ARM")], _snap([_q("ARM", bid=80.0, ask=80.1)]), reports_dir=tmp_path)
+    assert r.decision == "ROUTER_BLOCKED"
+    assert not (tmp_path / "approval_requests.jsonl").exists()
+
+
+def test_needs_review_never_creates_approval_request(tmp_path):
+    r = _route([_intent(symbol="SMCI", key="s|SMCI")], _snap([_q("SMCI", bid=40.0, ask=40.05)]), reports_dir=tmp_path)
+    assert r.decision == "ROUTER_BLOCKED"
+    assert not (tmp_path / "approval_requests.jsonl").exists()
+
+
+def test_unknown_ticker_blocked(tmp_path):
+    r = _route([_intent(symbol="F", key="s|F")], _snap([_q("F", bid=14.0, ask=14.01)]), reports_dir=tmp_path)
+    assert r.decision == "ROUTER_BLOCKED"
+    assert not (tmp_path / "approval_requests.jsonl").exists()
+
+
+def test_tier1_approved_can_be_selected(tmp_path):
+    r = _route([_intent(symbol="NVDA", conf=0.9, key="s|NVDA")],
+               _snap([_q("NVDA", bid=150.0, ask=150.05)]), reports_dir=tmp_path)
+    assert r.decision == "ROUTER_SELECTED"
+    assert r.selected.symbol == "NVDA"
+    assert r.selected.policy_tier == "1"
+
+
+def test_tier2_requires_stronger_confidence(tmp_path):
+    low = _route([_intent(symbol="PLTR", conf=0.84, key="s|PLTR|low")],
+                 _snap([_q("PLTR", bid=30.0, ask=30.02)]), reports_dir=tmp_path)
+    assert low.decision == "ROUTER_BLOCKED"
+
+    high = _route([_intent(symbol="PLTR", conf=0.85, key="s|PLTR|high")],
+                  _snap([_q("PLTR", bid=30.0, ask=30.02)]), reports_dir=tmp_path)
+    assert high.decision == "ROUTER_SELECTED"
+    assert high.selected.policy_tier == "2"
+
+
+def test_router_prefers_tier1_over_tier2_when_scores_are_close(tmp_path):
+    intents = [
+        _intent(symbol="PLTR", conf=0.95, key="s|PLTR"),
+        _intent(symbol="AAPL", conf=0.86, key="s|AAPL"),
+    ]
+    snap = _snap([_q("PLTR", bid=30.0, ask=30.02), _q("AAPL", bid=50.0, ask=50.02)])
+    r = _route(intents, snap, _settings(order_router_daily_max_approval_requests=5), reports_dir=tmp_path)
+    assert r.decision == "ROUTER_SELECTED"
+    assert r.selected.symbol == "AAPL"
+    assert r.selected.policy_tier == "1"
 
 
 def test_no_robinhood_write_tool_in_router():
@@ -217,7 +275,7 @@ def test_no_robinhood_write_tool_in_router():
 
 
 def test_router_decision_persisted_real_orders_zero(tmp_path):
-    _route([_intent(symbol="F", key="s|F")], _snap([_q("F", bid=14.0, ask=14.01)]), reports_dir=tmp_path)
+    _route([_intent(symbol="HOOD", key="s|HOOD")], _snap([_q("HOOD", bid=14.0, ask=14.01)]), reports_dir=tmp_path)
     raw = (tmp_path / "order_router_decisions.jsonl").read_text(encoding="utf-8")
     assert '"real_orders_placed": 0' in raw
 
@@ -230,11 +288,11 @@ def test_api_router_status_and_latest(tmp_path, monkeypatch):
     # API status는 실제 now로 일일 카운트를 집계하므로 라우팅도 실제 now로 정렬한다.
     real_now = datetime.now(timezone.utc)
     select_and_route(settings=_settings(), reports_dir=tmp_path, now=real_now, market_open=True, send=False,
-                     intents=[_intent(symbol="F", key="s|F")],
-                     snapshot=_snap([_q("F", bid=14.0, ask=14.01, as_of=real_now)], ts=real_now))
+                     intents=[_intent(symbol="HOOD", key="s|HOOD")],
+                     snapshot=_snap([_q("HOOD", bid=14.0, ask=14.01, as_of=real_now)], ts=real_now))
     c = TestClient(app)
     status = c.get("/api/live/order-router/status").json()
     assert status["max_notional_usd"] == 100.0 and status["real_orders_placed"] == 0
     assert status["approval_requests_today"] >= 1
     latest = c.get("/api/live/order-router/latest").json()
-    assert latest["decision"] == "ROUTER_SELECTED" and latest["selected"]["symbol"] == "F"
+    assert latest["decision"] == "ROUTER_SELECTED" and latest["selected"]["symbol"] == "HOOD"

@@ -140,13 +140,13 @@ def test_router_uses_alpaca_quote(tmp_path):
 
     live = Settings().live_strategy_id
     intent = OrderIntent(timestamp=NOW.isoformat(), session_id="s1", trading_mode="report_only",
-                         strategy_id=live, symbol="F", side="BUY", scan_event_key="s|F",
+                         strategy_id=live, symbol="HOOD", side="BUY", scan_event_key="s|HOOD",
                          mock_llm_decision="approve", mock_llm_confidence=0.9, mock_llm_reason="ok",
                          execution_gate_status="accepted_dry_run", planned_order_type="limit",
                          planned_limit_price=14.0, planned_notional_usd=50.0, planned_quantity=50.0 / 14.0)
     snap = BrokerSnapshot(timestamp=NOW.isoformat(), account_last4="••••9372", buying_power=985.97,
                           positions=[], open_orders=[], quotes=[])  # 스냅샷 호가 없음 → Alpaca 호가만
-    alpaca_q = {"F": RouterQuote(symbol="F", bid=14.0, ask=14.02, last=14.05, as_of=NOW.isoformat())}
+    alpaca_q = {"HOOD": RouterQuote(symbol="HOOD", bid=14.0, ask=14.02, last=14.05, as_of=NOW.isoformat())}
     r = select_and_route(settings=Settings(order_router_daily_max_approval_requests=1),
                          reports_dir=tmp_path, now=NOW, market_open=True, intents=[intent],
                          snapshot=snap, live_quotes=alpaca_q, send=False)

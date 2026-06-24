@@ -34,6 +34,11 @@ from backend.app.services.approval_store import (
 from backend.app.services.broker_snapshot import BrokerSnapshot, is_stale, latest_snapshot
 from backend.app.services.candidate_pipeline import ORDER_INTENTS_LOG
 from backend.app.services.execution_gate import OrderIntent
+from backend.app.services.live_universe_policy import (
+    UniversePolicyDecision,
+    evaluate_symbol_policy,
+    policy_score_bonus,
+)
 from backend.app.services.real_order_executor import (
     daily_real_order_count,
     executed_keys,
@@ -158,6 +163,11 @@ class SelectedPreview(BaseModel):
     ask: float | None = None
     last: float | None = None
     spread_pct: float | None = None
+    policy_tier: str | None = None
+    policy_status: str | None = None
+    policy_reason: str | None = None
+    policy_decision: str | None = None
+    risk_multiplier: float | None = None
     strategy_id: str
     source_intent_id: str
     confidence: float | None = None
@@ -216,6 +226,9 @@ def _eligible(intent: OrderIntent, *, settings: Settings, snapshot: BrokerSnapsh
         reasons.append("이미 승인 요청 존재 (중복)")
     if _has_open_buy(snapshot, intent.symbol):
         reasons.append("중복 미체결 매수 주문 존재")
+    policy = evaluate_symbol_policy(intent.symbol, confidence=intent.mock_llm_confidence)
+    if not policy.allowed:
+        reasons.append(f"universe policy blocked: {policy.decision} — {policy.user_reason}")
     return reasons
 
 
@@ -227,7 +240,7 @@ def _score(intent: OrderIntent, quote: RouterQuote, *, settings: Settings, snaps
     age = quote.age_seconds(snapshot=snapshot, now=now) or 0.0
     spread_penalty = (spread / settings.order_router_max_spread_pct) * 0.1 if settings.order_router_max_spread_pct else 0.0
     age_penalty = (age / settings.order_router_quote_max_age_seconds) * 0.1 if settings.order_router_quote_max_age_seconds else 0.0
-    return round(conf - spread_penalty - age_penalty, 6)
+    return round(conf - spread_penalty - age_penalty + policy_score_bonus(intent.symbol), 6)
 
 
 def _quote_block_reasons(quote: RouterQuote | None, *, settings: Settings, snapshot: BrokerSnapshot,
@@ -247,7 +260,7 @@ def _quote_block_reasons(quote: RouterQuote | None, *, settings: Settings, snaps
 
 
 def _build_preview(intent: OrderIntent, quote: RouterQuote, *, settings: Settings,
-                   score: float) -> tuple[SelectedPreview | None, list[str]]:
+                   score: float, policy: UniversePolicyDecision) -> tuple[SelectedPreview | None, list[str]]:
     """주문유형 정책 적용($100 캡). 성공 시 (SelectedPreview, []), 실패 시 (None, [사유])."""
     cap = settings.order_router_max_notional_usd
     ref = quote.reference_price
@@ -259,6 +272,8 @@ def _build_preview(intent: OrderIntent, quote: RouterQuote, *, settings: Setting
             symbol=intent.symbol, order_type=order_type, notional=notional, quantity=quantity,
             dollar_amount=dollar_amount, limit_price=limit_price, bid=quote.bid, ask=quote.ask,
             last=quote.last, spread_pct=quote.spread_pct, strategy_id=intent.strategy_id,
+            policy_tier=policy.tier, policy_status=policy.status, policy_reason=policy.user_reason,
+            policy_decision=policy.decision, risk_multiplier=policy.risk_multiplier,
             source_intent_id=intent.scan_event_key, confidence=intent.mock_llm_confidence, score=score,
         )
 
@@ -359,7 +374,8 @@ def select_and_route(
     scored.sort(key=lambda t: (-t[0], t[1].symbol))
     score, intent, quote = scored[0]
 
-    preview, pv_reasons = _build_preview(intent, quote, settings=settings, score=score)
+    policy = evaluate_symbol_policy(intent.symbol, confidence=intent.mock_llm_confidence)
+    preview, pv_reasons = _build_preview(intent, quote, settings=settings, score=score, policy=policy)
     if preview is None:
         return _persist(OrderRouterResult(decision="ROUTER_BLOCKED", reason=pv_reasons[0],
                                           block_reasons=pv_reasons, candidates_considered=considered),
@@ -377,6 +393,8 @@ def select_and_route(
             routed_intent, type="BUY", settings=settings, snapshot=snapshot, now=now,
             reports_dir=reports_dir, send=send, post=post,
             bid=quote.bid, ask=quote.ask, last=quote.last, spread_pct=quote.spread_pct,
+            policy_tier=policy.tier, policy_status=policy.status, policy_reason=policy.user_reason,
+            policy_decision=policy.decision, risk_multiplier=policy.risk_multiplier,
         )
     except ApprovalRequestRefused as exc:
         return _persist(OrderRouterResult(decision="ROUTER_BLOCKED", reason=str(exc),

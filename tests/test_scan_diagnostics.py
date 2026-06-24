@@ -42,7 +42,7 @@ def _write_cycle(tmp_path, events):
 
 # --- 종목 진단 매핑 ---
 def test_buy_candidate_positive_reason():
-    d = build_symbol_diagnostic(_ev("F", "BUY_CANDIDATE", "진입: 게이트 통과 + 눌림목 재개", buy=True))
+    d = build_symbol_diagnostic(_ev("HOOD", "BUY_CANDIDATE", "진입: 게이트 통과 + 눌림목 재개", buy=True))
     assert d.final_decision == "BUY_CANDIDATE" and "매수 후보" in d.human_reason
     assert d.signal_strength == "통과" and "재개 신호" in d.pullback_status
 
@@ -52,6 +52,16 @@ def test_skipped_timing_reason_user_friendly():
     assert d.final_decision == "SKIPPED"
     assert "매수 타이밍" in d.human_reason and "기술" not in d.human_reason.lower()
     assert d.trend_status == "상승 추세" and d.technical_reason.startswith("트리거")
+    assert d.policy_label == "실전 매수 허용" and d.approval_allowed is True
+
+
+def test_policy_block_reason_user_friendly():
+    watch = build_symbol_diagnostic(_ev("ARM", "SKIP", "트리거 미충족: 눌림 없음"))
+    review = build_symbol_diagnostic(_ev("SMCI", "SKIP", "트리거 미충족: 눌림 없음"))
+    compass = build_symbol_diagnostic(_ev("SPY", "SKIP", "트리거 미충족: 눌림 없음"))
+    assert watch.policy_label == "관찰만: 자동매수 금지" and watch.approval_allowed is False
+    assert review.policy_label == "검토 필요: 자동매수 차단" and review.policy_tradable is False
+    assert compass.policy_label == "레짐 확인용: 매매 안 함" and compass.policy_tier == "0"
 
 
 def test_missing_data_reason_user_friendly():
@@ -67,12 +77,12 @@ def test_regime_blocked_reason_user_friendly():
 
 
 def test_error_reason_user_friendly():
-    d = build_symbol_diagnostic(_ev("F", "ERROR", "데이터 조회 실패: X", trend=None, rs=None))
+    d = build_symbol_diagnostic(_ev("HOOD", "ERROR", "데이터 조회 실패: X", trend=None, rs=None))
     assert d.final_decision == "ERROR" and "오류" in d.human_reason
 
 
 def test_advanced_fields_separate_from_human():
-    d = build_symbol_diagnostic(_ev("F", "SKIP", "트리거 미충족: 재개 신호 없음"))
+    d = build_symbol_diagnostic(_ev("HOOD", "SKIP", "트리거 미충족: 재개 신호 없음"))
     # 사람 친화(human_reason) ≠ 기술(technical_reason/scan_status/regime).
     assert d.human_reason != d.technical_reason
     assert d.scan_status == "SKIP" and d.regime == "NORMAL_BULL" and d.regime_source == "spy+vix"
@@ -80,7 +90,7 @@ def test_advanced_fields_separate_from_human():
 
 # --- 요약 ---
 def test_summary_no_candidates_headline(tmp_path):
-    evs = [_ev("F", "SKIP", "트리거 미충족: 눌림 없음(눌림 대기)"),
+    evs = [_ev("HOOD", "SKIP", "트리거 미충족: 눌림 없음(눌림 대기)"),
            _ev("AAPL", "SKIP", "트리거 미충족: 재개 신호 없음", rs=True),
            _ev("NVDA", "REJECT", "게이트 실패: SPY 대비 상대강도 미충족", rs=False)]
     _write_cycle(tmp_path, evs)
@@ -92,7 +102,7 @@ def test_summary_no_candidates_headline(tmp_path):
 
 
 def test_summary_with_candidate_headline(tmp_path):
-    evs = [_ev("F", "BUY_CANDIDATE", "진입: 게이트 통과 + 눌림목 재개", buy=True),
+    evs = [_ev("HOOD", "BUY_CANDIDATE", "진입: 게이트 통과 + 눌림목 재개", buy=True),
            _ev("AAPL", "SKIP", "트리거 미충족: 눌림 없음")]
     _write_cycle(tmp_path, evs)
     view = latest_diagnostics(reports_dir=tmp_path)
@@ -100,7 +110,7 @@ def test_summary_with_candidate_headline(tmp_path):
 
 
 def test_summary_bearish_headline(tmp_path):
-    evs = [_ev("F", "REJECT", "게이트 실패: 레짐 BEARISH 신규 진입 불가", regime="BEARISH"),
+    evs = [_ev("HOOD", "REJECT", "게이트 실패: 레짐 BEARISH 신규 진입 불가", regime="BEARISH"),
            _ev("AAPL", "REJECT", "게이트 실패: 레짐 BEARISH 신규 진입 불가", regime="BEARISH")]
     _write_cycle(tmp_path, evs)
     view = latest_diagnostics(reports_dir=tmp_path)
@@ -108,7 +118,7 @@ def test_summary_bearish_headline(tmp_path):
 
 
 def test_vix_warning_surfaced(tmp_path):
-    evs = [_ev("F", "SKIP", "트리거 미충족: 눌림 없음", regime="spy_bull_vix_unknown",
+    evs = [_ev("HOOD", "SKIP", "트리거 미충족: 눌림 없음", regime="spy_bull_vix_unknown",
                regime_source="spy_only", vix=None, risk_reduced=True,
                warn="VIX unavailable, using SPY-only conservative regime")]
     _write_cycle(tmp_path, evs)
@@ -118,17 +128,17 @@ def test_vix_warning_surfaced(tmp_path):
 
 
 def test_every_symbol_gets_diagnostic(tmp_path):
-    evs = [_ev(s, "SKIP", "트리거 미충족: 눌림 없음") for s in ("F", "AAPL", "NVDA", "MSFT")]
+    evs = [_ev(s, "SKIP", "트리거 미충족: 눌림 없음") for s in ("HOOD", "AAPL", "NVDA", "MSFT")]
     _write_cycle(tmp_path, evs)
     view = latest_diagnostics(reports_dir=tmp_path)
-    assert {d.symbol for d in view.symbols} == {"F", "AAPL", "NVDA", "MSFT"}
+    assert {d.symbol for d in view.symbols} == {"HOOD", "AAPL", "NVDA", "MSFT"}
     assert all(d.human_reason for d in view.symbols)
 
 
 def test_latest_cycle_only(tmp_path):
     # 두 사이클을 쓰면 최신 사이클만(심볼 반복 직전까지).
-    evs = [_ev("F", "SKIP", "x"), _ev("AAPL", "SKIP", "x"),  # 이전 사이클
-           _ev("F", "BUY_CANDIDATE", "진입: 게이트 통과 + 눌림목 재개", buy=True), _ev("AAPL", "SKIP", "y")]
+    evs = [_ev("HOOD", "SKIP", "x"), _ev("AAPL", "SKIP", "x"),  # 이전 사이클
+           _ev("HOOD", "BUY_CANDIDATE", "진입: 게이트 통과 + 눌림목 재개", buy=True), _ev("AAPL", "SKIP", "y")]
     _write_cycle(tmp_path, evs)
     view = latest_diagnostics(reports_dir=tmp_path)
     assert view.summary.total_scanned == 2 and view.summary.buy_candidates == 1
@@ -138,7 +148,7 @@ def test_latest_cycle_only(tmp_path):
 def test_api_latest_and_list(tmp_path, monkeypatch):
     import backend.app.services.live_scan as ls
     monkeypatch.setattr(ls, "DEFAULT_REPORTS_DIR", tmp_path)
-    _write_cycle(tmp_path, [_ev("F", "SKIP", "트리거 미충족: 눌림 없음"),
+    _write_cycle(tmp_path, [_ev("HOOD", "SKIP", "트리거 미충족: 눌림 없음"),
                             _ev("AAPL", "BUY_CANDIDATE", "진입: 게이트 통과 + 눌림목 재개", buy=True)])
     c = TestClient(app)
     latest = c.get("/api/live/scan-diagnostics/latest").json()
@@ -157,7 +167,7 @@ def test_empty_diagnostics_safe(tmp_path):
 
 # --- 안전 ---
 def test_no_side_effects(tmp_path):
-    _write_cycle(tmp_path, [_ev("F", "SKIP", "트리거 미충족: 눌림 없음")])
+    _write_cycle(tmp_path, [_ev("HOOD", "SKIP", "트리거 미충족: 눌림 없음")])
     latest_diagnostics(reports_dir=tmp_path)
     recent_diagnostics(reports_dir=tmp_path)
     assert not (tmp_path / "approval_requests.jsonl").exists()
