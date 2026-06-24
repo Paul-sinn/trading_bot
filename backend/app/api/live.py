@@ -41,6 +41,13 @@ from backend.app.services.approval_store import (
     load_requests,
     to_view,
 )
+from backend.app.services.market_hours_orchestrator import (
+    OrchestratorEvent,
+    OrchestratorStatus,
+    get_orchestrator,
+    load_events,
+    orchestrator_status,
+)
 from backend.app.services.order_router import (
     OrderRouterResult,
     OrderRouterStatus,
@@ -180,3 +187,33 @@ async def live_order_router_status() -> OrderRouterStatus:
 async def live_order_router_latest() -> OrderRouterResult | None:
     """가장 최근 라우터 결정(읽기 전용 — jsonl만 읽음). 없으면 null."""
     return latest_router_decision()
+
+
+@router.get("/api/live/orchestrator/status", response_model=OrchestratorStatus)
+async def live_orchestrator_status() -> OrchestratorStatus:
+    """장중 오케스트레이터 상태(읽기 전용 — 실행/주문 없음)."""
+    return orchestrator_status()
+
+
+@router.get("/api/live/orchestrator/events", response_model=list[OrchestratorEvent])
+async def live_orchestrator_events(limit: int = 50) -> list[OrchestratorEvent]:
+    """오케스트레이터 이벤트 로그(읽기 전용 — jsonl만). limit 1..500 clamp."""
+    return load_events(limit=limit)
+
+
+@router.post("/api/live/orchestrator/run-once", response_model=OrchestratorEvent)
+async def live_orchestrator_run_once() -> OrchestratorEvent:
+    """오케스트레이터 1회 실행 — 스캔/라우터/승인요청만. **주문 제출 없음**(Robinhood write 미호출)."""
+    return get_orchestrator().run_once()
+
+
+@router.post("/api/live/orchestrator/start")
+async def live_orchestrator_start() -> dict:
+    """오케스트레이터 백그라운드 루프 시작 — 승인 요청만 생성(주문 없음)."""
+    return get_orchestrator().start()
+
+
+@router.post("/api/live/orchestrator/stop")
+async def live_orchestrator_stop() -> dict:
+    """오케스트레이터 루프 정지(안전). 신규 승인요청 생성 중단."""
+    return get_orchestrator().stop()

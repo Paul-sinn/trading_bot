@@ -147,3 +147,28 @@
   라벨: "Bot selects the trade. Discord approval is still required before any real order."
 - **금지**: 주문 제출·Robinhood write(`mcp__robinhood…`)·`place_equity_order`·옵션·매도·unsupervised auto.
 - 현재까지: `real_orders_placed=0` 항상. 라우터는 후보 선택 + 승인 요청까지만 — 실주문 0.
+
+## 12. 장중 오케스트레이터 v1 (감독 자동매매 — 승인 요청만)
+`backend/app/services/market_hours_orchestrator.py`. 정규장에 자동으로:
+스냅샷 신선도 확인 → report_only 라이브 스캔 1회 → 자동 주문 라우터(§11) → (선택 시) Discord 승인 요청(§10).
+**실주문을 직접 내지 않는다.**
+
+- **run_once 게이트 순서**: 장시간(`ORCHESTRATOR_MARKET_HOURS_ONLY`) → 스냅샷 신선도
+  (`ORCHESTRATOR_REQUIRE_FRESH_BROKER_SNAPSHOT`) → 일일 실주문 캡(`MAX_REAL_ORDERS_PER_DAY`) →
+  일일 승인 캡(`ORCHESTRATOR_MAX_APPROVALS_PER_DAY`) → 대기 승인 존재 → Discord 봇 env 준비
+  (`ORCHESTRATOR_REQUIRE_DISCORD_APPROVAL_WORKER`) → 스캔 1회 → 라우터 → 승인 요청. 위반 시 안전 skip/warn.
+- **이벤트 로그**: `reports/orchestrator_events.jsonl` (timestamp·event_type·market_open·action·result·reason·
+  router_decision·approval_id?·real_orders_placed=0·errors). `action` ∈ {skip, run, approval_requested,
+  router_blocked, warn}.
+- **API**(읽기/제어): `GET /api/live/orchestrator/status`·`/orchestrator/events?limit=` ·
+  `POST /orchestrator/run-once`·`/orchestrator/start`·`/orchestrator/stop`. run-once/start는 스캔/라우터/승인요청만 —
+  **주문 제출 없음, Robinhood write 미호출**. start는 안전 interval 백그라운드 루프, stop은 루프 정지.
+- **CLI**: `scripts/run_market_orchestrator.py --once|--loop` (시크릿 미출력, 브로커 write 없음).
+- **대시보드**: "Market Orchestrator" 패널 — enabled/running·시장 open/closed·마지막 실행·최근 라우터 결정·
+  대기 승인 id·차단 사유·오늘 승인/실주문 카운트. 라벨: "Orchestrator only creates Discord approval requests.
+  It never submits orders."
+- **Config**: `ORCHESTRATOR_ENABLED=false`·`ORCHESTRATOR_INTERVAL_SECONDS=300`·`ORCHESTRATOR_MARKET_HOURS_ONLY=true`·
+  `ORCHESTRATOR_MAX_APPROVALS_PER_DAY=1`·`ORCHESTRATOR_REQUIRE_DISCORD_APPROVAL_WORKER=true`·
+  `ORCHESTRATOR_REQUIRE_FRESH_BROKER_SNAPSHOT=true`.
+- **금지**: 주문 제출·Robinhood write(`mcp__robinhood…`)·`place_equity_order`·unsupervised auto.
+- 현재까지: `real_orders_placed=0` 항상. 오케스트레이터는 승인 요청까지만 — 실주문 0.

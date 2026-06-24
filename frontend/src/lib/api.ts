@@ -16,6 +16,7 @@ import type {
   LiveScanEvent,
   LiveSessionState,
   LiveWeeklyRecord,
+  OrchestratorStatus,
   OrderIntent,
   OrderReceipt,
   OrderRouterResult,
@@ -223,6 +224,11 @@ export function getOrderRouterStatus(): Promise<OrderRouterStatus | null> {
 /** 가장 최근 라우터 결정(읽기 전용 — jsonl만). 실패 시 null. */
 export function getLatestRouterDecision(): Promise<OrderRouterResult | null> {
   return apiFetch<OrderRouterResult>("/api/live/order-router/latest");
+}
+
+/** 장중 오케스트레이터 상태(읽기 전용 — 승인 요청만, 주문 없음). 실패 시 null. */
+export function getOrchestratorStatus(): Promise<OrchestratorStatus | null> {
+  return apiFetch<OrchestratorStatus>("/api/live/orchestrator/status");
 }
 
 // --- 포지션 / 청산 매니저(read-only, dry-run) ---

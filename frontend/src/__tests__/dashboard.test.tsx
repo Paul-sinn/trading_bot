@@ -21,6 +21,7 @@ const getApprovals = vi.fn().mockResolvedValue([]);
 const getLatestApproval = vi.fn().mockResolvedValue(null);
 const getOrderRouterStatus = vi.fn().mockResolvedValue(null);
 const getLatestRouterDecision = vi.fn().mockResolvedValue(null);
+const getOrchestratorStatus = vi.fn().mockResolvedValue(null);
 vi.mock("@/lib/api", () => ({
   getPortfolio: vi.fn().mockResolvedValue(mockPortfolio),
   getLiveStatus: vi.fn().mockResolvedValue(mockLiveStatus),
@@ -38,6 +39,7 @@ vi.mock("@/lib/api", () => ({
   getLatestApproval: (...args: unknown[]) => getLatestApproval(...args),
   getOrderRouterStatus: (...args: unknown[]) => getOrderRouterStatus(...args),
   getLatestRouterDecision: (...args: unknown[]) => getLatestRouterDecision(...args),
+  getOrchestratorStatus: (...args: unknown[]) => getOrchestratorStatus(...args),
   startLive: (...args: unknown[]) => startLive(...args),
   stopLive: (...args: unknown[]) => stopLive(...args),
   emergencyHalt: (...args: unknown[]) => emergencyHalt(...args),
@@ -146,6 +148,16 @@ describe("① 대시보드 페이지", () => {
     expect(
       screen.getByText(
         "Real sell requires manual arm and CONFIRM_REAL_SELL_1. No automatic sell.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("Market Orchestrator 패널(승인요청만 라벨)을 렌더한다", async () => {
+    render(await DashboardPage());
+    expect(screen.getByText("Market Orchestrator")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Orchestrator only creates Discord approval requests. It never submits orders.",
       ),
     ).toBeInTheDocument();
   });

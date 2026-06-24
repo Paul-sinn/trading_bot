@@ -78,6 +78,15 @@ class Settings(BaseSettings):
     order_router_limit_buffer_pct: float = 0.001  # 지정가 = ask * (1+buffer), 안전 상한 내에서.
     order_router_min_confidence_for_fractional: float = 0.7  # 분수 시장가 매수 최소 신뢰도(고신뢰만).
 
+    # 장중 오케스트레이터(v1) — 정규장에 스냅샷 신선도 확인 → report_only 스캔 → 라우터 → Discord 승인
+    # 요청까지 자동 수행. **주문을 제출하지 않는다**(승인 요청만). 모든 안전 게이트 그대로 적용.
+    orchestrator_enabled: bool = False  # 마스터 스위치(기본 OFF). start API/CLI로만 켠다.
+    orchestrator_interval_seconds: int = 300  # 백그라운드 루프 주기.
+    orchestrator_market_hours_only: bool = True  # 정규장 외 skip.
+    orchestrator_max_approvals_per_day: int = 1  # 하루 오케스트레이터 승인 요청 상한.
+    orchestrator_require_discord_approval_worker: bool = True  # Discord 봇 env 미설정 시 승인요청 생성 차단.
+    orchestrator_require_fresh_broker_snapshot: bool = True  # stale 스냅샷이면 skip.
+
     # Discord 승인 게이트 — 실주문(매수/매도) 전 Discord에서 사람이 명시적으로 !approve 해야 한다.
     # 승인은 리스크 게이트를 우회하지 않는다(승인 + 모든 게이트 + 확인까지 통과해야 제출 시도).
     require_discord_approval_for_real_order: bool = True

@@ -516,6 +516,27 @@ export interface ExitDecision {
   real_orders_placed: number;
 }
 
+/** backend: services/market_hours_orchestrator.py OrchestratorStatus. 장중 오케스트레이터 상태(읽기 전용 — 승인 요청만, 주문 없음). */
+export interface OrchestratorStatus {
+  enabled: boolean;
+  running: boolean;
+  market_open: boolean;
+  interval_seconds: number;
+  market_hours_only: boolean;
+  max_approvals_per_day: number;
+  require_discord_approval_worker: boolean;
+  discord_worker_ready: boolean;
+  approvals_today: number;
+  real_orders_today: number;
+  pending_approval_id: string | null;
+  last_run_at: string | null;
+  last_action: string | null;
+  last_result: string | null;
+  last_reason: string | null;
+  last_router_decision: string | null;
+  real_orders_placed: number;
+}
+
 /** backend: services/order_router.py OrderRouterStatus. 자동 라우터 설정 + 일일 카운트(읽기 전용). */
 export interface OrderRouterStatus {
   max_notional_usd: number;
