@@ -209,3 +209,19 @@
 - **API/대시보드**: `/api/live/execution-status`에 latest_broker_order_id 추가. 패널 라벨:
   "Discord approval triggers execution only after all gates are rechecked." (승인 id·주문유형·broker_order_id 표시)
 - **금지**: 실주문(이 task)·매도/취소/review·옵션·재시도·2차 주문·Robinhood write(`mcp__robinhood…`/`place_equity_order`).
+
+## 15. 승인 Robinhood MCP 제출 브리지 v1 (워커 컨텍스트 전용 executor)
+`RobinhoodMcpBuyExecutor`(`backend/app/services/real_order_executor.py`) — 승인 BUY를 실제 Robinhood MCP로
+제출하는 **명명된 브리지**. 단, 실제 도구명은 코드에 하드코딩하지 않는다(네임스페이스 미포함).
+
+- **사용 제약**: 워커가 런타임에 `submit_fn`을 주입하고 `worker_context=True`일 때만 콜백으로 1건 제출.
+  그 외(특히 FastAPI에서 직접 생성)에는 **항상 RealExecutionDisabled**(fail-closed). FastAPI는 worker_context를
+  켤 수 없다 → 백엔드에서 직접 실주문 불가.
+- **지원**: limit BUY(symbol·quantity·limit_price) · 분수 market BUY(symbol·dollar_amount ≤ $100). 재시도/2차 없음.
+- **승인 실행 워커 연결**: `approved_execution`의 `--execute-real` 기본 executor가 `RobinhoodMcpBuyExecutor()`
+  (워커 컨텍스트 아님 → fail-closed → BLOCKED). 모든 게이트(§13/§14)는 제출 전 재확인. 테스트는 mock/주입 콜백만.
+- **영수증**: `submit_mode`(dry_run|execute_real) 추가. 실 흔적(placed=true/1)은 production·real·non-proof
+  REAL_SUBMITTED만. mock/test/주입-콜백(mocked 시장시간)은 0 강제.
+- **API/대시보드**: execution-status에 latest_submit_mode·latest_broker_order_id. 라벨:
+  "Discord-approved orders are submitted only after all gates are rechecked."
+- 현재까지: `real_orders_placed=0` 항상. 실 MCP write는 워커가 submit_fn을 주입하는 미래 라이브 런에서만.

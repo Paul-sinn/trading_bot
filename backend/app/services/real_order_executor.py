@@ -99,6 +99,42 @@ class MockOrderExecutor:
         return {"broker_order_id": f"MOCK-MKT-{uuid.uuid4().hex[:12]}", "symbol": symbol}
 
 
+class RobinhoodMcpBuyExecutor:
+    """승인된 실 BUY 제출 브리지 — **Claude/Codex MCP 워커 컨텍스트 전용**.
+
+    실제 주문 도구는 코드에 하드코딩하지 않는다(네임스페이스 미포함). 워커가 런타임에 `submit_fn`을
+    주입하고 `worker_context=True`로 명시했을 때만 그 콜백을 통해 1건 제출한다. 그 외(특히 FastAPI에서
+    직접 생성)에는 **항상 RealExecutionDisabled**(fail-closed) — 실 write 미도달.
+
+    submit_fn 시그니처(워커가 제공): fn(kind, symbol, quantity?, limit_price?, dollar_amount?) -> dict
+    (dict는 broker_order_id 포함). 자동 재시도/2차 주문 없음 — 호출부가 정확히 1회만 부른다.
+    """
+
+    name = "robinhood_mcp"
+
+    def __init__(self, *, submit_fn=None, worker_context: bool = False) -> None:
+        self._submit_fn = submit_fn
+        self._worker_context = worker_context
+
+    def _guard(self) -> None:
+        # FastAPI/백엔드 경로는 worker_context를 켜지 못한다 → 항상 disabled.
+        if not self._worker_context or self._submit_fn is None:
+            raise RealExecutionDisabled(
+                "Robinhood MCP submit is only available inside the Claude/Codex worker context "
+                "with an injected submit function. Not reachable from FastAPI."
+            )
+
+    def submit_limit_buy(self, *, symbol: str, quantity: float, limit_price: float) -> dict:
+        self._guard()
+        assert self._submit_fn is not None  # _guard가 보장
+        return self._submit_fn(kind="limit", symbol=symbol, quantity=quantity, limit_price=limit_price)
+
+    def submit_market_buy(self, *, symbol: str, dollar_amount: float) -> dict:
+        self._guard()
+        assert self._submit_fn is not None  # _guard가 보장
+        return self._submit_fn(kind="market", symbol=symbol, dollar_amount=dollar_amount)
+
+
 # --- readiness 판정 ---
 class ExecutionReadiness(BaseModel):
     ready: bool
@@ -218,6 +254,7 @@ class RealExecutionReceipt(BaseModel):
     approval_id: str | None = None
     source_intent_id: str | None = None
     strategy_id: str | None = None
+    submit_mode: str | None = None  # dry_run | execute_real (승인 실행 워커 표식)
     # 프로덕션 준비도와 테스트/증명 실행을 절대 혼동하지 않기 위한 출처 표식.
     environment: Literal["production", "test"] = "production"
     market_hours_source: Literal["real", "mocked"] = "real"
@@ -464,6 +501,7 @@ class ExecutionStatus(BaseModel):
     latest_approval_id: str | None = None
     latest_order_type: str | None = None
     latest_broker_order_id: str | None = None
+    latest_submit_mode: str | None = None
     # test/proof(mocked 시장시간) 이력은 별도 카운트로만 노출 — 프로덕션 latest로 섞이지 않는다.
     test_proof_count: int = 0
     real_orders_placed: int = 0
@@ -493,6 +531,7 @@ def execution_status(*, settings: Settings | None = None, reports_dir: Path | No
         latest_approval_id=prod.approval_id if prod else None,
         latest_order_type=prod.order_type if prod else None,
         latest_broker_order_id=prod.broker_order_id if prod else None,
+        latest_submit_mode=prod.submit_mode if prod else None,
         test_proof_count=test_proof_count(reports_dir=reports_dir),
         real_orders_placed=0,
     )

@@ -124,7 +124,7 @@ describe("① 대시보드 페이지", () => {
     expect(screen.getByText("실주문 실행 준비")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Discord approval triggers execution only after all gates are rechecked.",
+        "Discord-approved orders are submitted only after all gates are rechecked.",
       ),
     ).toBeInTheDocument();
     expect(

@@ -28,7 +28,7 @@ from backend.app.services.real_order_executor import (
     OrderExecutor,
     RealExecutionDisabled,
     RealExecutionReceipt,
-    RealRobinhoodOrderExecutor,
+    RobinhoodMcpBuyExecutor,
     _has_open_buy,
     append_execution_receipt,
     daily_real_order_count,
@@ -124,6 +124,7 @@ def _build_receipt(
 ) -> RealExecutionReceipt:
     proof = market_hours_source == "mocked" or isinstance(executor, MockOrderExecutor)
     environment: Literal["production", "test"] = "test" if proof else "production"
+    submit_mode = "execute_real" if execute_real else "dry_run"
     r = request
 
     def _r(decision, reason, *, broker_order_id=None, real_order_placed=False, real_orders_placed=0):
@@ -135,7 +136,8 @@ def _build_receipt(
             limit_price=(r.limit_price if r else None), notional=(r.notional if r else None),
             order_type=(r.order_type if r else None), approval_id=(r.approval_id if r else None),
             source_intent_id=(r.source_intent_id if r else None), strategy_id=(r.strategy_id if r else None),
-            executor=(executor.name if executor else "real_robinhood"),
+            submit_mode=submit_mode,
+            executor=(executor.name if executor else "robinhood_mcp"),
             environment=environment, market_hours_source=market_hours_source, is_proof_run=proof,
             decision=decision, reason=reason, block_reasons=reasons,
             broker_order_id=broker_order_id, real_order_placed=real_order_placed,
@@ -148,10 +150,11 @@ def _build_receipt(
         return _r("BLOCKED", reasons[0])
     if not execute_real:
         return _r("APPROVED_READY_DRY_RUN", "모든 게이트 통과 — dry-run, 주문 제출 없음")
-    # execute-real: 라우터 프리뷰대로 정확히 1건만 제출(실 executor는 disabled → fail-closed).
-    # limit → submit_limit_buy(quantity, limit_price), market → submit_market_buy(dollar_amount<=100).
+    # execute-real: 라우터 프리뷰대로 정확히 1건만 제출. 기본 executor는 RobinhoodMcpBuyExecutor(브리지) —
+    # 워커 컨텍스트 + 주입된 submit_fn이 없으면 disabled(fail-closed). limit → submit_limit_buy,
+    # market(분수) → submit_market_buy(dollar_amount ≤ $100).
     assert r is not None
-    ex = executor or RealRobinhoodOrderExecutor()
+    ex = executor or RobinhoodMcpBuyExecutor()
 
     def _submit() -> dict:
         if r.order_type == "market":
