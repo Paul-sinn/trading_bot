@@ -172,3 +172,25 @@
   `ORCHESTRATOR_REQUIRE_FRESH_BROKER_SNAPSHOT=true`.
 - **금지**: 주문 제출·Robinhood write(`mcp__robinhood…`)·`place_equity_order`·unsupervised auto.
 - 현재까지: `real_orders_placed=0` 항상. 오케스트레이터는 승인 요청까지만 — 실주문 0.
+
+## 13. Discord 승인 실행 워커 v1 (승인 후 1건 — 게이트 전부 재확인)
+`backend/app/services/approved_execution.py` + `scripts/approved_execution_worker.py`.
+오케스트레이터가 만든 승인 요청을 Paul이 `!approve` 한 뒤, 이 워커가 처리한다. **승인은 게이트를
+우회하지 않는다** — 제출 전 모든 리스크 게이트를 재확인한다. 구현/테스트 중 실주문 0.
+
+- **모드**: `--dry-run`(기본 — 제출 없음, READY/BLOCKED 영수증만) · `--execute-real`(미래 라이브 전용 —
+  모든 게이트 통과 시에만 1건). 실 executor는 항상 disabled → 프로덕션 `--execute-real`도 fail-closed(BLOCKED).
+- **재확인 게이트**: 최신 APPROVED 결정 존재 · 매칭 요청 존재 · 만료 아님 · 허용 Discord 사용자 ·
+  preview_hash 일치 · idempotency 미사용 · 전략/라이브스캔 intent(테스트성 차단) · fresh 스냅샷 ·
+  정규장 · Agentic 계정 · 일일 실주문 < 1 · notional ≤ 100 · 중복 미체결 매수 없음 · BUY/limit·market only.
+- **영수증**(기존 `real_execution_receipts.jsonl` 재사용): approval_id·source_intent_id·strategy_id·order_type·
+  symbol·side·quantity/dollar_amount·limit_price·notional·decision(BLOCKED/APPROVED_READY_DRY_RUN/REAL_SUBMITTED/
+  ERROR)·broker_order_id·real_order_placed·real_orders_placed·reason. 실 흔적(placed=true/1)은
+  **production·real 시장시간·non-proof REAL_SUBMITTED**에만. mock/test는 REAL_SUBMITTED라도 0 강제.
+  `daily_real_order_count`도 진짜 실 제출만 집계.
+- **--execute-real 통과 시**(미래): 라우터 프리뷰 기준 BUY 1건만(limit 또는 fractional market), 재시도/2차 없음,
+  REAL_SUBMITTED 기록(broker_order_id), 스냅샷 read-only 갱신, Discord 알림.
+- **API/대시보드**: `/api/live/execution-status`에 latest_approval_id·latest_order_type 추가. 패널 라벨:
+  "Discord approval is required, and all risk gates are rechecked before any order."
+- **금지**: 실주문(이 task)·매도/취소/review·옵션·재시도·Robinhood write(`mcp__robinhood…`/`place_equity_order`).
+- 현재까지: `real_orders_placed=0` 항상. dry-run은 APPROVED_READY_DRY_RUN, 실 경로는 fail-closed.

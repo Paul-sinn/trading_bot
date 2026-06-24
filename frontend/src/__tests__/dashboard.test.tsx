@@ -124,7 +124,7 @@ describe("① 대시보드 페이지", () => {
     expect(screen.getByText("실주문 실행 준비")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Real order execution is disabled. Scaffold only — no Robinhood order submitted.",
+        "Discord approval is required, and all risk gates are rechecked before any order.",
       ),
     ).toBeInTheDocument();
     expect(

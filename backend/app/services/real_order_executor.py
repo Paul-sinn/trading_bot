@@ -34,7 +34,11 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_REPORTS_DIR = _REPO_ROOT / "reports"
 EXECUTION_RECEIPTS_LOG = "real_execution_receipts.jsonl"
 
-ExecutionDecision = Literal["REAL_BLOCKED", "REAL_READY_DRY_RUN", "MOCK_SUBMITTED", "REAL_SUBMITTED"]
+ExecutionDecision = Literal[
+    "REAL_BLOCKED", "REAL_READY_DRY_RUN", "MOCK_SUBMITTED", "REAL_SUBMITTED",
+    # Discord 승인 실행 워커(§13) 결정.
+    "APPROVED_READY_DRY_RUN", "BLOCKED", "ERROR",
+]
 RECEIPT_MODE = "real_execution_scaffold"
 
 
@@ -192,12 +196,18 @@ class RealExecutionReceipt(BaseModel):
     symbol: str
     side: str = "BUY"
     quantity: float | None = None
+    dollar_amount: float | None = None
     limit_price: float | None = None
     notional: float | None = None
+    order_type: str | None = None
     decision: ExecutionDecision
     reason: str = ""
     block_reasons: list[str] = Field(default_factory=list)
     executor: str = "real_robinhood"
+    # Discord 승인 실행 워커(§13) 연결 표식(선택).
+    approval_id: str | None = None
+    source_intent_id: str | None = None
+    strategy_id: str | None = None
     # 프로덕션 준비도와 테스트/증명 실행을 절대 혼동하지 않기 위한 출처 표식.
     environment: Literal["production", "test"] = "production"
     market_hours_source: Literal["real", "mocked"] = "real"
@@ -207,12 +217,22 @@ class RealExecutionReceipt(BaseModel):
     real_orders_placed: int = 0
 
     def model_post_init(self, _context) -> None:
-        # mode는 항상 고정. 실주문 흔적(real_order_placed/real_orders_placed)은 REAL_SUBMITTED(실제
-        # 제출된 경우)에만 제공값을 보존하고, 그 외 모든 경로(BLOCKED/READY/MOCK)는 강제로 0으로 박는다.
+        # mode는 항상 고정. 실주문 흔적(real_order_placed/real_orders_placed)은 **진짜 실 제출**에만
+        # 보존한다: decision=REAL_SUBMITTED · environment=production · 실 시장시간 · proof 아님.
+        # mock/test/proof는 REAL_SUBMITTED라도 0으로 강제(테스트가 실주문으로 집계되지 않게).
         object.__setattr__(self, "mode", RECEIPT_MODE)
-        if self.decision != "REAL_SUBMITTED":
+        is_real_submit = (
+            self.decision == "REAL_SUBMITTED"
+            and self.environment == "production"
+            and self.market_hours_source == "real"
+            and not self.is_proof_run
+        )
+        if not is_real_submit:
             object.__setattr__(self, "real_order_placed", False)
             object.__setattr__(self, "real_orders_placed", 0)
+        # broker_order_id는 제출된 receipt(REAL/MOCK_SUBMITTED)에만 남기고 그 외 None.
+        if self.decision not in ("REAL_SUBMITTED", "MOCK_SUBMITTED"):
+            object.__setattr__(self, "broker_order_id", None)
 
 
 def _path(reports_dir: Path | None) -> Path:
@@ -292,7 +312,8 @@ def daily_real_order_count(*, reports_dir: Path | None = None, now: datetime | N
     today = (now or _now()).date().isoformat()
     count = 0
     for r in load_execution_receipts(limit=500, reports_dir=reports_dir):
-        if r.decision != "REAL_SUBMITTED":
+        # 진짜 실 제출만 집계(production·실 시장시간·proof 아님). mock/test REAL_SUBMITTED는 제외.
+        if r.decision != "REAL_SUBMITTED" or r.environment != "production" or r.market_hours_source != "real" or r.is_proof_run:
             continue
         if (r.timestamp or "")[:10] == today:
             count += 1
@@ -425,6 +446,9 @@ class ExecutionStatus(BaseModel):
     latest_decision: str | None = None  # 프로덕션 최신 결정(없으면 null)
     latest_block_reason: str | None = None
     latest_environment: str | None = None  # 항상 production(또는 None)
+    # Discord 승인 실행 워커(§13) 표식 — 최신 프로덕션 receipt 기준.
+    latest_approval_id: str | None = None
+    latest_order_type: str | None = None
     # test/proof(mocked 시장시간) 이력은 별도 카운트로만 노출 — 프로덕션 latest로 섞이지 않는다.
     test_proof_count: int = 0
     real_orders_placed: int = 0
@@ -449,8 +473,10 @@ def execution_status(*, settings: Settings | None = None, reports_dir: Path | No
         max_real_orders_per_day=settings.max_real_orders_per_day,
         real_orders_today=daily_real_order_count(reports_dir=reports_dir),
         latest_decision=prod.decision if prod else None,
-        latest_block_reason=(prod.reason if prod and prod.decision == "REAL_BLOCKED" else None),
+        latest_block_reason=(prod.reason if prod and prod.decision in ("REAL_BLOCKED", "BLOCKED") else None),
         latest_environment=prod.environment if prod else None,
+        latest_approval_id=prod.approval_id if prod else None,
+        latest_order_type=prod.order_type if prod else None,
         test_proof_count=test_proof_count(reports_dir=reports_dir),
         real_orders_placed=0,
     )

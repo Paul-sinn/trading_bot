@@ -472,6 +472,9 @@ export interface ExecutionStatus {
   latest_decision: string | null;
   latest_block_reason: string | null;
   latest_environment: string | null;
+  // Discord 승인 실행 워커 표식(최신 프로덕션 receipt 기준).
+  latest_approval_id: string | null;
+  latest_order_type: string | null;
   // test/proof(mocked 시장시간) 이력은 별도 카운트로만 — 프로덕션 latest와 섞이지 않음.
   test_proof_count: number;
   real_orders_placed: number;
