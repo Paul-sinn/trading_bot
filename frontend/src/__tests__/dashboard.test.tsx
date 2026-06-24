@@ -22,6 +22,7 @@ const getLatestApproval = vi.fn().mockResolvedValue(null);
 const getOrderRouterStatus = vi.fn().mockResolvedValue(null);
 const getLatestRouterDecision = vi.fn().mockResolvedValue(null);
 const getOrchestratorStatus = vi.fn().mockResolvedValue(null);
+const getRegimeStatus = vi.fn().mockResolvedValue(null);
 vi.mock("@/lib/api", () => ({
   getPortfolio: vi.fn().mockResolvedValue(mockPortfolio),
   getLiveStatus: vi.fn().mockResolvedValue(mockLiveStatus),
@@ -40,6 +41,7 @@ vi.mock("@/lib/api", () => ({
   getOrderRouterStatus: (...args: unknown[]) => getOrderRouterStatus(...args),
   getLatestRouterDecision: (...args: unknown[]) => getLatestRouterDecision(...args),
   getOrchestratorStatus: (...args: unknown[]) => getOrchestratorStatus(...args),
+  getRegimeStatus: (...args: unknown[]) => getRegimeStatus(...args),
   startLive: (...args: unknown[]) => startLive(...args),
   stopLive: (...args: unknown[]) => stopLive(...args),
   emergencyHalt: (...args: unknown[]) => emergencyHalt(...args),
@@ -150,6 +152,11 @@ describe("① 대시보드 페이지", () => {
         "Real sell requires manual arm and CONFIRM_REAL_SELL_1. No automatic sell.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("레짐 필터 패널을 렌더한다", async () => {
+    render(await DashboardPage());
+    expect(screen.getByText("레짐 필터")).toBeInTheDocument();
   });
 
   it("Market Orchestrator 패널(승인요청만 라벨)을 렌더한다", async () => {

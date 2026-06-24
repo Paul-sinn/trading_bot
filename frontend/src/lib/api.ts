@@ -23,6 +23,7 @@ import type {
   OrderRouterStatus,
   MarketDirection,
   Portfolio,
+  RegimeStatus,
   SellExecutionStatus,
   ShadowReportView,
   ShadowRunResult,
@@ -229,6 +230,11 @@ export function getLatestRouterDecision(): Promise<OrderRouterResult | null> {
 /** 장중 오케스트레이터 상태(읽기 전용 — 승인 요청만, 주문 없음). 실패 시 null. */
 export function getOrchestratorStatus(): Promise<OrchestratorStatus | null> {
   return apiFetch<OrchestratorStatus>("/api/live/orchestrator/status");
+}
+
+/** 최신 스캔 레짐 요약(읽기 전용 — VIX 폴백/위험축소). 실패 시 null. */
+export function getRegimeStatus(): Promise<RegimeStatus | null> {
+  return apiFetch<RegimeStatus>("/api/live/regime");
 }
 
 // --- 포지션 / 청산 매니저(read-only, dry-run) ---

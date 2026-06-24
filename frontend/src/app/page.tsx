@@ -10,6 +10,7 @@ import { LiveTicker } from "@/components/dashboard/LiveTicker";
 import { MarketOrchestratorPanel } from "@/components/dashboard/MarketOrchestrator";
 import { OrderReceiptsPanel } from "@/components/dashboard/OrderReceipts";
 import { OrderRouterPanel } from "@/components/dashboard/OrderRouter";
+import { RegimePanel } from "@/components/dashboard/RegimePanel";
 import { ExecutionReadinessPanel } from "@/components/dashboard/ExecutionReadiness";
 import { PositionExitManagerPanel } from "@/components/dashboard/PositionExitManager";
 import { SellExecutionReadinessPanel } from "@/components/dashboard/SellExecutionReadiness";
@@ -24,6 +25,7 @@ import {
   getLiveStatus,
   getOrchestratorStatus,
   getOrderRouterStatus,
+  getRegimeStatus,
   getOrderIntents,
   getOrderReceipts,
   getPortfolio,
@@ -65,6 +67,7 @@ export default async function DashboardPage() {
   const routerStatus = await getOrderRouterStatus();
   const latestRouterDecision = await getLatestRouterDecision();
   const orchestratorStatus = await getOrchestratorStatus();
+  const regimeStatus = await getRegimeStatus();
   const positions = (await getPositions()) ?? [];
   const exits = (await getExits(50)) ?? [];
   const wr = winRate();
@@ -134,6 +137,9 @@ export default async function DashboardPage() {
 
       {/* 수동 매도 실행 준비(scaffold) — 기본 비활성, 매도 경로 없음 */}
       <SellExecutionReadinessPanel status={sellExecutionStatus} />
+
+      {/* 레짐 필터 — SPY+VIX(폴백) 레짐, VIX 부재 시 SPY-only 보수 */}
+      <RegimePanel status={regimeStatus} />
 
       {/* 장중 오케스트레이터 — 자동 스캔→라우터→승인요청(주문 제출 없음) */}
       <MarketOrchestratorPanel status={orchestratorStatus} />

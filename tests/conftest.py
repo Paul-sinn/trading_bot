@@ -13,3 +13,13 @@ import pytest
 def _disable_discord_by_default(monkeypatch):
     monkeypatch.setenv("DISCORD_WEBHOOK_URL", "")
     yield
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_vix_fetch(monkeypatch):
+    """기본 VIX 폴백(_default_vix_fetch)은 yfinance/stooq 네트워크를 탄다. 테스트는 결정론적 고정값으로
+    대체해 네트워크/플레이키를 배제한다. 'VIX 없음' 시나리오는 vix_fetch=lambda:None을 명시 주입한다."""
+    import backend.app.services.regime_adapter as ra
+
+    monkeypatch.setattr(ra, "_default_vix_fetch", lambda: 15.0)
+    yield

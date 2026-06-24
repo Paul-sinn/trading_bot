@@ -521,6 +521,16 @@ export interface ExitDecision {
   real_orders_placed: number;
 }
 
+/** backend: services/live_scan.py RegimeStatus. 최신 스캔 레짐 요약(읽기 전용). VIX 폴백/위험축소 표시. */
+export interface RegimeStatus {
+  regime: string | null;
+  regime_source: string | null; // spy+vix | spy_only | none
+  vix_value: number | null;
+  risk_reduced: boolean;
+  warning: string | null;
+  as_of: string | null;
+}
+
 /** backend: services/market_hours_orchestrator.py OrchestratorStatus. 장중 오케스트레이터 상태(읽기 전용 — 승인 요청만, 주문 없음). */
 export interface OrchestratorStatus {
   enabled: boolean;

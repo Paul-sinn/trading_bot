@@ -23,7 +23,7 @@ from backend.app.services.live_records import (
     LiveDailyRecord,
     LiveWeeklyRecord,
 )
-from backend.app.services.live_scan import ScanEvent
+from backend.app.services.live_scan import RegimeStatus, ScanEvent, regime_status
 from backend.app.services.live_session import (
     LiveActionResult,
     LiveSessionState,
@@ -113,6 +113,12 @@ async def live_weekly_record() -> list[LiveWeeklyRecord]:
 async def live_scan_events(limit: int = 50) -> list[ScanEvent]:
     """최근 라이브 스캔 이벤트(읽기 전용 — 스캔 시작 안 함, 주문 없음). limit 1..500 clamp."""
     return get_session_manager().scan_events(limit)
+
+
+@router.get("/api/live/regime", response_model=RegimeStatus)
+async def live_regime() -> RegimeStatus:
+    """최신 스캔의 레짐 요약(읽기 전용 — 스캔 시작 안 함, 주문 없음). VIX 폴백/위험축소 표시."""
+    return regime_status()
 
 
 @router.get("/api/live/candidates", response_model=list[Candidate])

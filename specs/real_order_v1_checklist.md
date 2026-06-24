@@ -259,3 +259,22 @@ Robinhood MCP가 여전히 브로커/주문 경로다. `ALPACA_TRADING_ENABLED=f
   v2 bars의 필수 `start` 파라미터(둘 다 실제 라이브 스캔에도 영향). 한계: Alpaca stocks 엔드포인트에 `^VIX`가
   없어 레짐 판정 불가 → 현재 scan-once는 전부 skipped(라이브 결선 시 VIX 대체 소스 필요).
 - **금지**: 주문·Robinhood write·Alpaca 거래. 읽기 전용 시장데이터만.
+
+## 18. 레짐 데이터 어댑터 v1 (VIX 폴백 + SPY-only 보수)
+`backend/app/services/regime_adapter.py`. Alpaca가 ^VIX를 못 줘서 라이브 스캔이 전 심볼 skip 되던 문제 해결.
+SPY 일봉은 활성 provider(Alpaca), **VIX는 폴백(yfinance→stooq)**. VIX 부재가 스캔을 죽이지 않는다.
+
+- **출력(RegimeResult)**: regime·regime_source(spy+vix|spy_only|none)·effective_regime(Regime enum값)·
+  spy_close·spy_200d·vix_value?·risk_reduced·warnings.
+- **VIX 폴백**: 레짐 필터 전용 — 종목/주문 가격엔 절대 안 씀. yfinance ^VIX → stooq 순; 모두 실패면 None(graceful).
+- **SPY-only 보수 폴백(VIX 없음)**: SPY>200d → `spy_bull_vix_unknown`(effective NERVOUS_BULL=half size, risk_reduced,
+  진입 허용) · SPY≤200d → `spy_bear_vix_unknown`(effective BEARISH, 신규 BUY 차단). 경고:
+  "VIX unavailable, using SPY-only conservative regime". SPY 자체가 없을 때만 `insufficient_spy`(레짐 None).
+- **라이브 스캔 통합**: AlpacaProvider가 유니버스/SPY 일봉 공급, 어댑터가 레짐 공급. INSUFFICIENT_DATA는
+  SPY/심볼 데이터가 실제 없을 때만 — **VIX 부재 단독으로는 skip 안 됨**. ScanEvent에 regime_source·vix_value·
+  risk_reduced·regime_warning 기록.
+- **before/after**: 이전 `--scan-once` = 18심볼 전부 skipped(레짐 불가). 이후 = VIX(yfinance 폴백)로 정상 레짐
+  또는 SPY-only로 진행 → BUY_CANDIDATE 산출 가능.
+- **API/대시보드**: `GET /api/live/regime`(RegimeStatus). "레짐 필터" 패널: regime·source·VIX·risk_reduced·경고.
+- **테스트 위생**: conftest가 `_default_vix_fetch`를 고정값으로 패치(네트워크 배제). 'VIX 없음'은 vix_fetch=None 주입.
+- **금지**: 주문·승인요청·Robinhood write·Alpaca 거래. 시장데이터 전용, fail-safe.

@@ -20,13 +20,13 @@ import pandas as pd
 from pydantic import BaseModel, Field
 
 from algorithms.entry import pullback_entry
-from algorithms.regime import Regime, classify_regime
+from algorithms.regime import Regime
 from algorithms.signals import relative_strength, rsi_value, trend_state
 from backend.app.services.market_data import (
     SPY_SYMBOL,
-    VIX_SYMBOL,
     MarketDataProvider,
 )
+from backend.app.services.regime_adapter import RegimeDataAdapter, RegimeResult
 
 # 베이스라인 유니버스 — experiments.universe_bias_test.BASELINE_UNIVERSE의 미러.
 # (그 모듈은 import 부작용이 커서 Live를 리서치/섀도 러너와 분리하기 위해 상수만 복제한다.
@@ -69,6 +69,11 @@ class ScanEvent(BaseModel):
     riskgate_status: str | None = None  # report_only에서는 평가 안 함(None)
     buy_candidate: bool = False
     real_orders_placed: int = 0
+    # 레짐 어댑터(§18) 메타 — 대시보드/상태용.
+    regime_source: str | None = None  # spy+vix | spy_only | none
+    vix_value: float | None = None
+    risk_reduced: bool = False
+    regime_warning: str | None = None
 
 
 def _scan_path(reports_dir: Path | None) -> Path:
@@ -96,11 +101,14 @@ class LiveScanLoop:
         reports_dir: Path | None = None,
         universe: tuple[str, ...] = LIVE_BASELINE_UNIVERSE,
         max_symbols: int = 0,
+        vix_fetch=None,
     ) -> None:
         self._provider = provider
         self._reports_dir = reports_dir
         self._universe = universe
         self._max_symbols = max_symbols
+        # 레짐 어댑터: SPY는 provider, VIX는 폴백(yfinance→stooq). vix_fetch 주입으로 테스트.
+        self._regime_adapter = RegimeDataAdapter(provider, vix_fetch=vix_fetch)
 
     def _symbols_this_cycle(self) -> list[str]:
         syms = list(self._universe)
@@ -108,36 +116,36 @@ class LiveScanLoop:
             return syms[: self._max_symbols]
         return syms
 
-    def _regime(self) -> Regime | None:
-        """SPY bars + VIX로 레짐 판정. SPY 부족/조회 실패 → None(전 심볼 INSUFFICIENT_DATA)."""
+    def _resolve_regime(self) -> tuple[RegimeResult, Regime | None, "pd.Series | None"]:
+        """레짐 어댑터로 레짐 + SPY close 시리즈를 구한다. VIX 없으면 SPY-only 보수 레짐.
+
+        반환: (RegimeResult, pullback용 Regime enum | None, SPY close 시리즈 | None).
+        regime이 None인 경우는 **SPY가 실제로 없을 때만** — VIX 부재는 더 이상 전 심볼 skip을 만들지 않는다.
+        """
         try:
-            spy = self._provider.get_recent_bars(SPY_SYMBOL, lookback_days=300)
-            vix_bars = self._provider.get_recent_bars(VIX_SYMBOL, lookback_days=10)
+            spy_bars = self._provider.get_recent_bars(SPY_SYMBOL, lookback_days=300)
         except Exception:  # noqa: BLE001 - graceful
-            return None
-        if "close" not in spy.columns or len(spy) < _SLOW_MA:
-            return None
-        if "close" not in vix_bars.columns or len(vix_bars) == 0:
-            return None
-        return classify_regime(spy["close"], list(vix_bars["close"].tail(5)))
+            spy_bars = None
+        rr = self._regime_adapter.resolve(spy_bars=spy_bars)
+        regime: Regime | None = Regime(rr.effective_regime) if rr.effective_regime else None
+        spy_close = (
+            spy_bars["close"]
+            if spy_bars is not None and "close" in spy_bars.columns and len(spy_bars) >= _SLOW_MA
+            else None
+        )
+        return rr, regime, spy_close
 
     def scan_cycle(
         self, *, session_id: str | None, trading_mode: str = "report_only"
     ) -> list[ScanEvent]:
         """베이스라인 유니버스 1회 스캔. 이벤트를 jsonl에 append하고 리스트로 반환한다."""
         provider_name = getattr(self._provider, "name", "unknown")
-        regime = self._regime()
-        spy_close: pd.Series | None = None
-        if regime is not None:
-            try:
-                spy_close = self._provider.get_recent_bars(SPY_SYMBOL, lookback_days=300)["close"]
-            except Exception:  # noqa: BLE001
-                regime = None
+        rr, regime, spy_close = self._resolve_regime()
 
         events: list[ScanEvent] = []
         for symbol in self._symbols_this_cycle():
             events.append(
-                self._scan_symbol(symbol, regime, spy_close, session_id, trading_mode, provider_name)
+                self._scan_symbol(symbol, regime, spy_close, session_id, trading_mode, provider_name, rr)
             )
         self._append_events(events)
         return events
@@ -146,11 +154,14 @@ class LiveScanLoop:
         self,
         symbol: str,
         regime: Regime | None,
-        spy_close: pd.Series | None,
+        spy_close: "pd.Series | None",
         session_id: str | None,
         trading_mode: str,
         provider_name: str,
+        rr: RegimeResult,
     ) -> ScanEvent:
+        warning = rr.warnings[0] if rr.warnings else None
+
         def event(
             scan_status: str,
             reason: str,
@@ -159,6 +170,9 @@ class LiveScanLoop:
             features: dict | None = None,
             buy_candidate: bool = False,
         ) -> ScanEvent:
+            feat = features or {}
+            feat.setdefault("regime", rr.regime)
+            feat.setdefault("regime_source", rr.regime_source)
             return ScanEvent(
                 timestamp=_now_iso(),
                 session_id=session_id,
@@ -168,8 +182,12 @@ class LiveScanLoop:
                 price=price,
                 scan_status=scan_status,
                 reason=reason,
-                features=features or {},
+                features=feat,
                 buy_candidate=buy_candidate,
+                regime_source=rr.regime_source,
+                vix_value=rr.vix_value,
+                risk_reduced=rr.risk_reduced,
+                regime_warning=warning,
             )
 
         try:
@@ -179,8 +197,9 @@ class LiveScanLoop:
 
         if "close" not in bars.columns or len(bars) < _SLOW_MA:
             return event(INSUFFICIENT_DATA, "bars < 200(추세 워밍업 전)")
+        # 레짐 None은 **SPY가 실제로 없을 때만**(VIX 부재는 SPY-only 레짐으로 처리됨).
         if regime is None or spy_close is None:
-            return event(INSUFFICIENT_DATA, "SPY/VIX 부족 — 레짐 판정 불가")
+            return event(INSUFFICIENT_DATA, "SPY 데이터 부족 — 레짐 판정 불가")
 
         close = bars["close"]
         price = float(close.iloc[-1])
@@ -189,7 +208,9 @@ class LiveScanLoop:
             "trend": trend_state(close).value,
             "relative_strength": relative_strength(close, spy_close),
             "rsi": rsi_value(close),
-            "regime": regime.value,
+            "regime": rr.regime,  # 레짐 라벨(예: spy_bull_vix_unknown 포함)
+            "effective_regime": regime.value,
+            "regime_source": rr.regime_source,
             "price": price,
         }
 
@@ -215,6 +236,30 @@ class LiveScanLoop:
         with path.open("a", encoding="utf-8") as fh:
             for ev in events:
                 fh.write(json.dumps(ev.model_dump(), ensure_ascii=False) + "\n")
+
+
+class RegimeStatus(BaseModel):
+    """최신 스캔의 레짐 요약(읽기 전용 — 대시보드용). 주문/네트워크 없음."""
+
+    regime: str | None = None
+    regime_source: str | None = None
+    vix_value: float | None = None
+    risk_reduced: bool = False
+    warning: str | None = None
+    as_of: str | None = None
+
+
+def regime_status(*, reports_dir: Path | None = None) -> RegimeStatus:
+    """가장 최근 스캔 이벤트에서 레짐 정보를 읽어 요약한다(스캔 시작 안 함)."""
+    evs = load_scan_events(limit=1, reports_dir=reports_dir)
+    if not evs:
+        return RegimeStatus()
+    e = evs[-1]
+    label = e.features.get("regime") if isinstance(e.features, dict) else None
+    return RegimeStatus(
+        regime=label, regime_source=e.regime_source, vix_value=e.vix_value,
+        risk_reduced=e.risk_reduced, warning=e.regime_warning, as_of=e.timestamp,
+    )
 
 
 def load_scan_events(*, limit: int = 50, reports_dir: Path | None = None) -> list[ScanEvent]:
