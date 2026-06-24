@@ -281,6 +281,24 @@ def test_worker_cli_no_robinhood():
     assert "mcp__robinhood" not in text and "place_equity_order" not in text
 
 
+def test_worker_cli_supports_loop_mode():
+    from pathlib import Path
+    text = Path("scripts/approved_execution_worker.py").read_text(encoding="utf-8")
+    assert "--loop" in text and "--interval" in text
+
+
+def test_worker_latest_approved_id_tracks_discord_final_approval(tmp_path):
+    from scripts.approved_execution_worker import _latest_approved_id
+
+    assert _latest_approved_id(reports_dir=tmp_path) is None
+    append_decision(ApprovalDecision(approval_id="r1", decision="REJECT", discord_user_id="U1",
+                                     valid=True, decided_at=NOW.isoformat()), reports_dir=tmp_path)
+    assert _latest_approved_id(reports_dir=tmp_path) is None
+    append_decision(ApprovalDecision(approval_id="a1", decision="APPROVE", discord_user_id="U1",
+                                     valid=True, decided_at=NOW.isoformat()), reports_dir=tmp_path)
+    assert _latest_approved_id(reports_dir=tmp_path) == "a1"
+
+
 def test_no_real_orders_placed_in_any_receipt(tmp_path):
     s = _settings(enable_real_order_execution=True)
     _approved(tmp_path, s)

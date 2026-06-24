@@ -19,8 +19,11 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
+from pathlib import Path
 
 from backend.app.core.config import Settings
+from backend.app.services.approval_store import load_decisions
 from backend.app.services.approved_execution import process_approved_execution
 
 
@@ -35,18 +38,49 @@ def _print(rcpt) -> None:
     )
 
 
+def _latest_approved_id(*, reports_dir: Path | None = None) -> str | None:
+    decisions = load_decisions(reports_dir=reports_dir)
+    latest = next((d for d in reversed(decisions) if d.valid), None)
+    if latest is None or latest.decision != "APPROVE":
+        return None
+    return latest.approval_id
+
+
+def _run_once(*, execute_real: bool):
+    rcpt = process_approved_execution(settings=Settings(), execute_real=execute_real)
+    _print(rcpt)
+    return rcpt
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Discord-approved execution worker (dry-run by default — no orders).")
     g = parser.add_mutually_exclusive_group()
     g.add_argument("--dry-run", action="store_true", help="평가만, 제출 없음(기본)")
     g.add_argument("--execute-real", action="store_true", help="모든 게이트 통과 시 1건 제출(미래 라이브 전용)")
+    parser.add_argument("--loop", action="store_true", help="Discord APPROVE 결정을 계속 감시한다")
+    parser.add_argument("--interval", type=int, default=5, help="loop poll interval seconds")
     args = parser.parse_args(argv)
 
     execute_real = bool(args.execute_real)
     if execute_real:
-        print("[approved-exec] --execute-real 요청됨. 실 executor는 fail-closed(disabled)라 프로덕션에선 제출되지 않습니다.")
-    rcpt = process_approved_execution(settings=Settings(), execute_real=execute_real)
-    _print(rcpt)
+        print("[approved-exec] --execute-real 요청됨. Discord APPROVE가 최종 승인입니다. 모든 게이트 통과 시 1건만 시도합니다.")
+    if not args.loop:
+        _run_once(execute_real=execute_real)
+        return 0
+
+    interval = max(1, int(args.interval))
+    completed: set[str] = set()
+    print(f"[approved-exec] loop 시작 — interval={interval}s mode={'execute_real' if execute_real else 'dry_run'}")
+    try:
+        while True:
+            approval_id = _latest_approved_id()
+            if approval_id and approval_id not in completed:
+                rcpt = _run_once(execute_real=execute_real)
+                if rcpt.approval_id:
+                    completed.add(rcpt.approval_id)
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        print("[approved-exec] 종료.")
     return 0
 
 
