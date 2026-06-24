@@ -30,7 +30,8 @@ LIVE = Settings().live_strategy_id
 def _settings(**kw) -> Settings:
     base = dict(orchestrator_market_hours_only=True, orchestrator_require_fresh_broker_snapshot=False,
                 orchestrator_require_discord_approval_worker=False, orchestrator_max_approvals_per_day=1,
-                max_real_orders_per_day=1, order_router_daily_max_approval_requests=1)
+                max_real_orders_per_day=1, order_router_daily_max_approval_requests=1,
+                market_data_provider="mock")  # hermetic: 통합 라우터가 Alpaca 네트워크를 타지 않게
     base.update(kw)
     return Settings(**base)
 

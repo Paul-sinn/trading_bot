@@ -244,3 +244,18 @@ Robinhood MCP가 여전히 브로커/주문 경로다. `ALPACA_TRADING_ENABLED=f
 - **fail-safe**: 키 미설정/API 오류/레이트리밋/stale/빈 bars → 예외 또는 빈 프레임 → 스캔 ERROR/INSUFFICIENT_DATA →
   **BUY_CANDIDATE 없음 → 승인 요청 생성 안 됨**. 라우터 호가 fetch 실패도 {} → 후보 차단.
 - **금지**: 주문/Robinhood write(`mcp__robinhood…`/`place_equity_order`)·Alpaca 거래. 시세 전용.
+
+## 17. Alpaca 읽기 전용 연결 스모크 테스트 (시세 전용)
+`scripts/alpaca_smoke_test.py`. 자격/IEX 피드/일봉/최신 호가가 AlpacaMarketDataProvider로 동작하는지 확인.
+**읽기 전용 — 주문 없음, Alpaca 거래 없음, Robinhood write 없음, 시크릿/전체 env 미출력.**
+
+- **요약(심볼당)**: provider·feed·symbol·bars_count·last_bar_date·last_close·bid·ask·last·quote_timestamp·
+  quote_age_seconds·status(OK/WARNING/ERROR). 테스트 심볼 AAPL/SPY/F.
+- **실패 처리**: 키 미설정 → "Alpaca not configured" + 비정상 종료(2). API 오류/레이트리밋 → 안전 메시지
+  (예외 타입명만, 시크릿 미노출) + 비정상 종료(1). 빈 bars / 누락·stale 호가 → WARNING(크래시 아님).
+- **`--scan-once`**: report_only 스캔 1회(라우터/승인/주문 없음). BUY_CANDIDATE/skipped/errors 카운트 출력.
+- **연결 확인(2026-06-23)**: bars OK(AAPL/SPY/F 각 300봉, 실제 종가), quotes OK(IEX bid/last; ask는 장마감
+  후 0). `--scan-once` OK(18심볼, errors=0). 스모크가 두 버그를 발견·수정: base URL 끝의 중복 `/v2`,
+  v2 bars의 필수 `start` 파라미터(둘 다 실제 라이브 스캔에도 영향). 한계: Alpaca stocks 엔드포인트에 `^VIX`가
+  없어 레짐 판정 불가 → 현재 scan-once는 전부 skipped(라이브 결선 시 VIX 대체 소스 필요).
+- **금지**: 주문·Robinhood write·Alpaca 거래. 읽기 전용 시장데이터만.

@@ -51,7 +51,8 @@ def _settings(**kw) -> Settings:
     base = dict(order_router_max_notional_usd=100.0, order_router_allow_fractional_market_buy=True,
                 order_router_max_spread_pct=0.003, order_router_quote_max_age_seconds=30,
                 order_router_daily_max_approval_requests=1, max_real_orders_per_day=1,
-                require_market_hours_for_real_order=True, require_fresh_broker_snapshot_for_real_order=True)
+                require_market_hours_for_real_order=True, require_fresh_broker_snapshot_for_real_order=True,
+                market_data_provider="mock")  # hermetic: 라우터는 주입된 스냅샷 호가만(Alpaca 네트워크 배제)
     base.update(kw)
     return Settings(**base)
 

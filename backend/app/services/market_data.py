@@ -195,8 +195,13 @@ class AlpacaMarketDataProvider:
         s = settings or Settings()
         self._key = (s.alpaca_api_key_id or "").strip()
         self._secret = (s.alpaca_api_secret_key or "").strip()
-        self._base = (s.alpaca_data_base_url or "https://data.alpaca.markets").rstrip("/")
+        # 경로는 "/v2/..."를 붙이므로 base에 끝의 "/v2"가 있으면 제거(중복 방지). 두 형태 모두 허용.
+        base = (s.alpaca_data_base_url or "https://data.alpaca.markets").rstrip("/")
+        if base.endswith("/v2"):
+            base = base[: -len("/v2")]
+        self._base = base
         self._feed = s.alpaca_data_feed or "iex"
+        self.feed = self._feed  # 공개 읽기용(스모크 요약 등). 시크릿 아님.
         self._timeframe = s.alpaca_bar_timeframe or "1Day"
         self._lookback = int(s.alpaca_lookback_days or 300)
         # http_get(url, headers, params) -> dict(JSON). None이면 실제 httpx 사용.
@@ -220,9 +225,15 @@ class AlpacaMarketDataProvider:
 
     def get_recent_bars(self, symbol: str, lookback_days: int | None = None) -> pd.DataFrame:
         days = int(lookback_days or self._lookback)
+        # v2 bars는 start가 필요하다. 거래일 ~days개를 확보하려 달력일을 넉넉히 잡고(주말/휴일 보정),
+        # 응답을 정렬한 뒤 가장 최근 days개만 tail로 취한다.
+        from datetime import timedelta
+
+        start = (datetime.now(timezone.utc) - timedelta(days=int(days * 1.6) + 7)).date().isoformat()
         data = self._get(
             f"/v2/stocks/{symbol}/bars",
-            {"timeframe": self._timeframe, "limit": days, "feed": self._feed, "adjustment": "raw"},
+            {"timeframe": self._timeframe, "start": start, "feed": self._feed,
+             "adjustment": "raw", "limit": 10000},
         )
         rows = data.get("bars") or []
         if not rows:
