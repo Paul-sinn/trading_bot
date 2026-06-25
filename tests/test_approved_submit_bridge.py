@@ -52,7 +52,8 @@ def _snap(account="••••9372", bp=985.97) -> BrokerSnapshot:
 
 
 def _intent(symbol="F", notional=50.0, limit=14.0, key="s|F") -> OrderIntent:
-    return OrderIntent(timestamp=NOW.isoformat(), session_id="s1", trading_mode="report_only",
+    return OrderIntent(timestamp=NOW.isoformat(), scan_run_id="s1", intent_generated_at=NOW.isoformat(),
+                       trading_date=NOW.date().isoformat(), session_id="s1", trading_mode="report_only",
                        strategy_id=LIVE, symbol=symbol, side="BUY", scan_event_key=key,
                        mock_llm_decision="approve", mock_llm_confidence=0.9, mock_llm_reason="ok",
                        execution_gate_status="accepted_dry_run", planned_order_type="limit",
@@ -73,11 +74,15 @@ def _approve_market(tmp_path):
     append_snapshot(_snap(), reports_dir=tmp_path)
     ph = compute_preview_hash(type="BUY", symbol="NVDA", side="BUY", order_type="market", quantity=None,
                               limit_price=None, notional=100.0, account_last4="••••9372",
-                              source_intent_id="s|NVDA", strategy_id=LIVE, idempotency_key="s|NVDA")
+                              source_intent_id="s|NVDA", strategy_id=LIVE, idempotency_key="s|NVDA",
+                              scan_run_id="s1", intent_generated_at=NOW.isoformat(),
+                              trading_date=NOW.date().isoformat())
     req = ApprovalRequest(created_at=NOW.isoformat(), expires_at=(NOW + timedelta(minutes=10)).isoformat(),
                           type="BUY", symbol="NVDA", side="BUY", order_type="market", quantity=None,
                           dollar_amount=100.0, limit_price=None, notional=100.0, account_last4="••••9372",
                           source_intent_id="s|NVDA", strategy_id=LIVE, idempotency_key="s|NVDA",
+                          scan_run_id="s1", intent_generated_at=NOW.isoformat(),
+                          trading_date=NOW.date().isoformat(),
                           preview_hash=ph, status="PENDING")
     append_request(req, reports_dir=tmp_path)
     append_decision(ApprovalDecision(approval_id=req.approval_id, decision="APPROVE", discord_user_id="U1",

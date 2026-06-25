@@ -638,6 +638,9 @@ export interface RouterSelectedPreview {
   policy_reason: string | null;
   policy_decision: string | null;
   risk_multiplier: number | null;
+  scan_run_id: string | null;
+  intent_generated_at: string | null;
+  trading_date: string | null;
   strategy_id: string;
   source_intent_id: string;
   confidence: number | null;
@@ -675,6 +678,9 @@ export interface ApprovalView {
   policy_reason: string | null;
   policy_decision: string | null;
   risk_multiplier: number | null;
+  scan_run_id: string | null;
+  intent_generated_at: string | null;
+  trading_date: string | null;
   strategy_id: string;
   status: "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED" | "CANCELLED";
   expired: boolean;

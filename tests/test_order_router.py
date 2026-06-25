@@ -28,8 +28,11 @@ LIVE = Settings().live_strategy_id
 
 def _intent(symbol="HOOD", strategy_id=LIVE, conf=0.9, side="BUY", decision="approve",
             gate="accepted_dry_run", key=None, notional=50.0, limit=14.0) -> OrderIntent:
+    generated_at = NOW.isoformat()
+    trading_date = NOW.date().isoformat()
     return OrderIntent(
-        timestamp="2026-06-23T14:00:00+00:00", session_id="s1", trading_mode="report_only",
+        timestamp=generated_at, scan_run_id="s1", intent_generated_at=generated_at,
+        trading_date=trading_date, session_id="s1", trading_mode="report_only",
         strategy_id=strategy_id, symbol=symbol, side=side, scan_event_key=key or f"{strategy_id}|{symbol}|2026-06-23",
         mock_llm_decision=decision, mock_llm_confidence=conf, mock_llm_reason="ok",
         execution_gate_status=gate, planned_order_type="limit",
@@ -181,6 +184,22 @@ def test_approval_request_created_correctly(tmp_path):
     assert req.bid == 14.0 and req.ask == 14.01 and req.spread_pct is not None
     assert req.policy_tier == "2" and req.policy_status == "approved"
     assert req.policy_decision == "allowed" and "실전 매수 허용" in (req.policy_reason or "")
+    assert req.scan_run_id == "s1"
+    assert req.intent_generated_at == NOW.isoformat()
+    assert req.trading_date == NOW.date().isoformat()
+
+
+def test_stale_intent_previous_trading_date_blocked(tmp_path):
+    stale = _intent(symbol="HOOD", key="s1|HOOD|2026-06-22|stale").model_copy(
+        update={
+            "trading_date": "2026-06-22",
+            "timestamp": "2026-06-22T19:00:00+00:00",
+            "intent_generated_at": "2026-06-22T19:00:00+00:00",
+        }
+    )
+    r = _route([stale], _snap([_q("HOOD", bid=14.0, ask=14.01)]), reports_dir=tmp_path)
+    assert r.decision == "ROUTER_BLOCKED"
+    assert not (tmp_path / "approval_requests.jsonl").exists()
 
 
 def test_preview_hash_changes_with_preview(tmp_path):
@@ -287,8 +306,15 @@ def test_api_router_status_and_latest(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "DEFAULT_REPORTS_DIR", tmp_path)
     # API status는 실제 now로 일일 카운트를 집계하므로 라우팅도 실제 now로 정렬한다.
     real_now = datetime.now(timezone.utc)
+    intent = _intent(symbol="HOOD", key=f"s|HOOD|{real_now.date().isoformat()}").model_copy(
+        update={
+            "timestamp": real_now.isoformat(),
+            "intent_generated_at": real_now.isoformat(),
+            "trading_date": real_now.date().isoformat(),
+        }
+    )
     select_and_route(settings=_settings(), reports_dir=tmp_path, now=real_now, market_open=True, send=False,
-                     intents=[_intent(symbol="HOOD", key="s|HOOD")],
+                     intents=[intent],
                      snapshot=_snap([_q("HOOD", bid=14.0, ask=14.01, as_of=real_now)], ts=real_now))
     c = TestClient(app)
     status = c.get("/api/live/order-router/status").json()

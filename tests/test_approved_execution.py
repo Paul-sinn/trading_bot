@@ -49,7 +49,8 @@ def _snap(account_last4="••••9372", bp=985.97, open_orders=None, ts=NOW)
 
 
 def _intent(symbol="F", strategy_id=LIVE, notional=50.0, limit=14.0, key="s|F") -> OrderIntent:
-    return OrderIntent(timestamp=NOW.isoformat(), session_id="s1", trading_mode="report_only",
+    return OrderIntent(timestamp=NOW.isoformat(), scan_run_id="s1", intent_generated_at=NOW.isoformat(),
+                       trading_date=NOW.date().isoformat(), session_id="s1", trading_mode="report_only",
                        strategy_id=strategy_id, symbol=symbol, side="BUY", scan_event_key=key,
                        mock_llm_decision="approve", mock_llm_confidence=0.9, mock_llm_reason="ok",
                        execution_gate_status="accepted_dry_run", planned_order_type="limit",
@@ -163,6 +164,21 @@ def test_duplicate_open_buy_blocks(tmp_path):
     assert r.decision == "BLOCKED" and any("중복 미체결 매수" in x for x in r.block_reasons)
 
 
+def test_stale_approval_trading_date_blocks(tmp_path):
+    s = _settings()
+    stale_intent = _intent(key="s|F|2026-06-22").model_copy(
+        update={
+            "trading_date": "2026-06-22",
+            "timestamp": "2026-06-22T19:00:00+00:00",
+            "intent_generated_at": "2026-06-22T19:00:00+00:00",
+        }
+    )
+    _approved(tmp_path, s, intent=stale_intent)
+    r = _run(tmp_path, s)
+    assert r.decision == "BLOCKED"
+    assert any("stale intent guard" in x for x in r.block_reasons)
+
+
 # --- 통과 경로 ---
 def test_dry_run_produces_approved_ready(tmp_path):
     s = _settings()
@@ -225,12 +241,15 @@ def test_fractional_market_mock_submit_succeeds(tmp_path):
     # 고가주 분수 시장가: order_type=market, dollar_amount<=100, quantity/limit None.
     ph = compute_preview_hash(type="BUY", symbol="NVDA", side="BUY", order_type="market", quantity=None,
                               limit_price=None, notional=100.0, account_last4="••••9372",
-                              source_intent_id="s|NVDA", strategy_id=LIVE, idempotency_key="s|NVDA")
+                              source_intent_id="s|NVDA", strategy_id=LIVE, idempotency_key="s|NVDA",
+                              scan_run_id="s1", intent_generated_at=NOW.isoformat(),
+                              trading_date=NOW.date().isoformat())
     req = ApprovalRequest(created_at=NOW.isoformat(), expires_at=(NOW + timedelta(minutes=10)).isoformat(),
                           type="BUY", symbol="NVDA", side="BUY", order_type="market", quantity=None,
                           dollar_amount=100.0, limit_price=None, notional=100.0, account_last4="••••9372",
                           source_intent_id="s|NVDA", strategy_id=LIVE, idempotency_key="s|NVDA",
-                          preview_hash=ph, status="PENDING")
+                          scan_run_id="s1", intent_generated_at=NOW.isoformat(),
+                          trading_date=NOW.date().isoformat(), preview_hash=ph, status="PENDING")
     append_request(req, reports_dir=tmp_path)
     append_decision(ApprovalDecision(approval_id=req.approval_id, decision="APPROVE", discord_user_id="U1",
                                      valid=True, decided_at=NOW.isoformat()), reports_dir=tmp_path)
@@ -256,11 +275,15 @@ def test_over_cap_blocks(tmp_path):
     # notional > $100 인 승인 요청을 직접 생성(라우터/생성기는 막지만 게이트 재확인을 검증).
     ph = compute_preview_hash(type="BUY", symbol="F", side="BUY", order_type="limit", quantity=10.0,
                               limit_price=15.0, notional=150.0, account_last4="••••9372",
-                              source_intent_id="big|F", strategy_id=LIVE, idempotency_key="big|F")
+                              source_intent_id="big|F", strategy_id=LIVE, idempotency_key="big|F",
+                              scan_run_id="s1", intent_generated_at=NOW.isoformat(),
+                              trading_date=NOW.date().isoformat())
     req = ApprovalRequest(created_at=NOW.isoformat(), expires_at=(NOW + timedelta(minutes=10)).isoformat(),
                           type="BUY", symbol="F", side="BUY", order_type="limit", quantity=10.0, limit_price=15.0,
                           notional=150.0, account_last4="••••9372", source_intent_id="big|F",
-                          strategy_id=LIVE, idempotency_key="big|F", preview_hash=ph, status="PENDING")
+                          strategy_id=LIVE, idempotency_key="big|F", scan_run_id="s1",
+                          intent_generated_at=NOW.isoformat(), trading_date=NOW.date().isoformat(),
+                          preview_hash=ph, status="PENDING")
     append_request(req, reports_dir=tmp_path)
     append_decision(ApprovalDecision(approval_id=req.approval_id, decision="APPROVE", discord_user_id="U1",
                                      valid=True, decided_at=NOW.isoformat()), reports_dir=tmp_path)

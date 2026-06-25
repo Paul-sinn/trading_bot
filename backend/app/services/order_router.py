@@ -168,6 +168,9 @@ class SelectedPreview(BaseModel):
     policy_reason: str | None = None
     policy_decision: str | None = None
     risk_multiplier: float | None = None
+    scan_run_id: str | None = None
+    intent_generated_at: str | None = None
+    trading_date: str | None = None
     strategy_id: str
     source_intent_id: str
     confidence: float | None = None
@@ -206,7 +209,7 @@ def _load_intents(reports_dir: Path | None, limit: int = 200) -> list[OrderInten
 
 
 def _eligible(intent: OrderIntent, *, settings: Settings, snapshot: BrokerSnapshot,
-              executed: set[str], reports_dir: Path | None) -> list[str]:
+              executed: set[str], reports_dir: Path | None, now: datetime) -> list[str]:
     """단일 intent의 자격 위반 사유(빈 리스트면 자격 있음)."""
     reasons: list[str] = []
     # 전략/라이브스캔 생성 + 테스트성 차단
@@ -224,12 +227,31 @@ def _eligible(intent: OrderIntent, *, settings: Settings, snapshot: BrokerSnapsh
         reasons.append("이미 실행/접수됨 (executed)")
     if get_request_for_intent(intent.scan_event_key, reports_dir=reports_dir) is not None:
         reasons.append("이미 승인 요청 존재 (중복)")
+    intent_date = _intent_trading_date(intent)
+    today = now.date().isoformat()
+    if intent_date is None:
+        reasons.append("stale intent guard: trading_date 없음")
+    elif intent_date != today:
+        reasons.append(f"stale intent guard: trading_date {intent_date} != {today}")
+    if not intent.intent_generated_at:
+        reasons.append("stale intent guard: intent_generated_at 없음")
+    if not intent.scan_run_id:
+        reasons.append("stale intent guard: scan_run_id 없음")
     if _has_open_buy(snapshot, intent.symbol):
         reasons.append("중복 미체결 매수 주문 존재")
     policy = evaluate_symbol_policy(intent.symbol, confidence=intent.mock_llm_confidence)
     if not policy.allowed:
         reasons.append(f"universe policy blocked: {policy.decision} — {policy.user_reason}")
     return reasons
+
+
+def _intent_trading_date(intent: OrderIntent) -> str | None:
+    if intent.trading_date:
+        return intent.trading_date[:10]
+    for part in reversed(intent.scan_event_key.split("|")):
+        if len(part) == 10 and part[4] == "-" and part[7] == "-":
+            return part
+    return (intent.timestamp or "")[:10] or None
 
 
 def _score(intent: OrderIntent, quote: RouterQuote, *, settings: Settings, snapshot: BrokerSnapshot,
@@ -274,6 +296,8 @@ def _build_preview(intent: OrderIntent, quote: RouterQuote, *, settings: Setting
             last=quote.last, spread_pct=quote.spread_pct, strategy_id=intent.strategy_id,
             policy_tier=policy.tier, policy_status=policy.status, policy_reason=policy.user_reason,
             policy_decision=policy.decision, risk_multiplier=policy.risk_multiplier,
+            scan_run_id=intent.scan_run_id, intent_generated_at=intent.intent_generated_at,
+            trading_date=_intent_trading_date(intent),
             source_intent_id=intent.scan_event_key, confidence=intent.mock_llm_confidence, score=score,
         )
 
@@ -357,7 +381,7 @@ def select_and_route(
             continue
         seen.add(intent.scan_event_key)
         considered += 1
-        if _eligible(intent, settings=settings, snapshot=snapshot, executed=executed, reports_dir=reports_dir):
+        if _eligible(intent, settings=settings, snapshot=snapshot, executed=executed, reports_dir=reports_dir, now=now):
             continue
         quote = _quote_for(snapshot, intent.symbol, live_quotes=live_quotes)
         if _quote_block_reasons(quote, settings=settings, snapshot=snapshot, now=now):

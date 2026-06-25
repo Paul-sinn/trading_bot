@@ -139,7 +139,8 @@ def test_router_uses_alpaca_quote(tmp_path):
     from backend.app.services.order_router import RouterQuote, select_and_route
 
     live = Settings().live_strategy_id
-    intent = OrderIntent(timestamp=NOW.isoformat(), session_id="s1", trading_mode="report_only",
+    intent = OrderIntent(timestamp=NOW.isoformat(), scan_run_id="s1", intent_generated_at=NOW.isoformat(),
+                         trading_date=NOW.date().isoformat(), session_id="s1", trading_mode="report_only",
                          strategy_id=live, symbol="HOOD", side="BUY", scan_event_key="s|HOOD",
                          mock_llm_decision="approve", mock_llm_confidence=0.9, mock_llm_reason="ok",
                          execution_gate_status="accepted_dry_run", planned_order_type="limit",

@@ -55,7 +55,8 @@ def _snap(ts=NOW) -> BrokerSnapshot:
 
 
 def _intent(symbol="HOOD", key="s|HOOD") -> OrderIntent:
-    return OrderIntent(timestamp=NOW.isoformat(), session_id="s1", trading_mode="report_only", strategy_id=LIVE,
+    return OrderIntent(timestamp=NOW.isoformat(), scan_run_id="s1", intent_generated_at=NOW.isoformat(),
+                       trading_date=NOW.date().isoformat(), session_id="s1", trading_mode="report_only", strategy_id=LIVE,
                        symbol=symbol, side="BUY", scan_event_key=key, mock_llm_decision="approve",
                        mock_llm_confidence=0.9, mock_llm_reason="ok", execution_gate_status="accepted_dry_run",
                        planned_order_type="limit", planned_limit_price=14.0, planned_notional_usd=50.0,

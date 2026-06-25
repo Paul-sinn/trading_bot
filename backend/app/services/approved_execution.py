@@ -44,7 +44,12 @@ def _now() -> datetime:
 def _synth_intent(request: ApprovalRequest) -> OrderIntent:
     """승인 요청으로부터 게이트 재확인용 합성 OrderIntent를 만든다(주문 아님)."""
     return OrderIntent(
-        timestamp=request.created_at, session_id=None, trading_mode="report_only",
+        timestamp=request.intent_generated_at or request.created_at,
+        scan_run_id=request.scan_run_id,
+        intent_generated_at=request.intent_generated_at,
+        trading_date=request.trading_date,
+        session_id=request.scan_run_id,
+        trading_mode="report_only",
         strategy_id=request.strategy_id, symbol=request.symbol, side=request.side,
         scan_event_key=request.source_intent_id, mock_llm_decision="approve",
         mock_llm_confidence=1.0, mock_llm_reason="discord approved",
@@ -80,6 +85,10 @@ def evaluate_approved_gates(
     # 출처: 전략/라이브스캔 intent만(테스트성 차단).
     if intent.strategy_id != settings.live_strategy_id and not settings.test_only_intent_real_order_allowed:
         reasons.append("test-only/non-strategy intent")
+    if not request.scan_run_id or not request.intent_generated_at or not request.trading_date:
+        reasons.append("stale intent guard: scan metadata 없음")
+    elif request.trading_date[:10] != now.date().isoformat():
+        reasons.append(f"stale intent guard: trading_date {request.trading_date[:10]} != {now.date().isoformat()}")
     if intent.side != "BUY":
         reasons.append("BUY only (v1)")
     if getattr(intent, "asset_type", "equity") != "equity":

@@ -117,6 +117,9 @@ def approval_gate_for_intent(
         notional=intent.planned_notional_usd, account_last4=account_last4,
         source_intent_id=intent.scan_event_key, strategy_id=intent.strategy_id,
         idempotency_key=intent.scan_event_key,
+        scan_run_id=getattr(intent, "scan_run_id", None),
+        intent_generated_at=getattr(intent, "intent_generated_at", None),
+        trading_date=getattr(intent, "trading_date", None),
     )
     req = get_request_for_intent(intent.scan_event_key, reports_dir=reports_dir)
     decs = decisions_for(req.approval_id, reports_dir=reports_dir) if req else []

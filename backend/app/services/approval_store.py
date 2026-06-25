@@ -70,6 +70,9 @@ class ApprovalRequest(BaseModel):
     policy_reason: str | None = None
     policy_decision: str | None = None
     risk_multiplier: float | None = None
+    scan_run_id: str | None = None
+    intent_generated_at: str | None = None
+    trading_date: str | None = None
     source_intent_id: str
     strategy_id: str
     idempotency_key: str
@@ -108,6 +111,9 @@ def compute_preview_hash(
     source_intent_id: str,
     strategy_id: str,
     idempotency_key: str,
+    scan_run_id: str | None = None,
+    intent_generated_at: str | None = None,
+    trading_date: str | None = None,
 ) -> str:
     """주문 핵심 필드의 정준 해시(sha256). 승인 후 주문이 바뀌면 해시 불일치로 차단된다."""
     payload = json.dumps(
@@ -116,6 +122,8 @@ def compute_preview_hash(
             "quantity": quantity, "limit_price": limit_price, "notional": notional,
             "account_last4": account_last4, "source_intent_id": source_intent_id,
             "strategy_id": strategy_id, "idempotency_key": idempotency_key,
+            "scan_run_id": scan_run_id, "intent_generated_at": intent_generated_at,
+            "trading_date": trading_date,
         },
         sort_keys=True, ensure_ascii=False,
     )
@@ -254,6 +262,9 @@ class ApprovalView(BaseModel):
     policy_reason: str | None = None
     policy_decision: str | None = None
     risk_multiplier: float | None = None
+    scan_run_id: str | None = None
+    intent_generated_at: str | None = None
+    trading_date: str | None = None
     strategy_id: str
     status: ApprovalStatus
     expired: bool
@@ -276,6 +287,8 @@ def to_view(req: ApprovalRequest, *, reports_dir: Path | None = None, now: datet
         bid=req.bid, ask=req.ask, last=req.last, spread_pct=req.spread_pct,
         policy_tier=req.policy_tier, policy_status=req.policy_status, policy_reason=req.policy_reason,
         policy_decision=req.policy_decision, risk_multiplier=req.risk_multiplier,
+        scan_run_id=req.scan_run_id, intent_generated_at=req.intent_generated_at,
+        trading_date=req.trading_date,
         strategy_id=req.strategy_id,
         status=status, expired=_is_expired(req, now=now), reason=req.reason,
         approve_command=f"!approve {req.approval_id}", reject_command=f"!reject {req.approval_id}",
@@ -334,6 +347,8 @@ def create_approval_request(
         quantity=intent.planned_quantity, limit_price=intent.planned_limit_price, notional=notional,
         account_last4=account_last4, source_intent_id=intent.scan_event_key,
         strategy_id=intent.strategy_id, idempotency_key=intent.scan_event_key,
+        scan_run_id=intent.scan_run_id, intent_generated_at=intent.intent_generated_at,
+        trading_date=intent.trading_date,
     )
     req = ApprovalRequest(
         created_at=now.isoformat(),
@@ -343,6 +358,8 @@ def create_approval_request(
         notional=notional, account_last4=account_last4, bid=bid, ask=ask, last=last, spread_pct=spread_pct,
         policy_tier=policy_tier, policy_status=policy_status, policy_reason=policy_reason,
         policy_decision=policy_decision, risk_multiplier=risk_multiplier,
+        scan_run_id=intent.scan_run_id, intent_generated_at=intent.intent_generated_at,
+        trading_date=intent.trading_date,
         source_intent_id=intent.scan_event_key,
         strategy_id=intent.strategy_id, idempotency_key=intent.scan_event_key, preview_hash=preview_hash,
     )

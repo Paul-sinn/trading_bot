@@ -54,6 +54,9 @@ export function DiscordApprovalPanel({
                     {a.expired ? "만료" : "만료 전"}
                   </span>
                 </div>
+                <div className="mt-0.5 text-[11px] text-neutral-500">
+                  거래일 {a.trading_date ?? "—"} · 신호 {a.intent_generated_at ?? "—"}
+                </div>
                 <div className="mt-0.5 font-mono text-[11px] text-neutral-500">{a.approve_command}</div>
                 <div className="font-mono text-[11px] text-neutral-500">{a.reject_command}</div>
               </div>
@@ -72,6 +75,7 @@ export function DiscordApprovalPanel({
         <Item label="만료 여부" value={latest ? (latest.expired ? "만료됨" : "유효") : "—"} />
         <Item label="결정자" value={latest?.decided_by ?? "—"} />
         <Item label="최근 결정" value={latest?.decision ?? "—"} />
+        <Item label="거래일" value={latest?.trading_date ?? "—"} />
         <Item label="만료시각" value={latest?.expires_at ?? "—"} mono />
       </div>
     </Card>

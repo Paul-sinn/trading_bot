@@ -41,6 +41,9 @@ class OrderIntent(BaseModel):
     """dry-run 주문 계획서. **주문 아님** — real_orders_placed=0, broker_order_id None."""
 
     timestamp: str
+    scan_run_id: str | None = None
+    intent_generated_at: str | None = None
+    trading_date: str | None = None
     session_id: str | None
     trading_mode: str
     strategy_id: str
@@ -92,6 +95,9 @@ class ExecutionGate:
         broker_snapshot: BrokerSnapshot | None = None,
         snapshot_max_age_seconds: int = 3600,
         reject_on_stale_snapshot: bool = False,
+        scan_run_id: str | None = None,
+        trading_date: str | None = None,
+        intent_generated_at: str | None = None,
     ) -> tuple[ExecutionGateResult, OrderIntent]:
         reasons: list[str] = []
         warnings: list[str] = []
@@ -151,8 +157,12 @@ class ExecutionGate:
                 reasons.append(f"중복 미체결 매수 주문 존재: {symbol}")
 
         status: ExecutionGateStatus = "accepted_dry_run" if not reasons else "rejected"
+        generated_at = intent_generated_at or _now_iso()
         intent = OrderIntent(
-            timestamp=_now_iso(),
+            timestamp=generated_at,
+            scan_run_id=scan_run_id,
+            intent_generated_at=generated_at,
+            trading_date=trading_date,
             session_id=session_id,
             trading_mode=trading_mode,
             strategy_id=strategy_id,
